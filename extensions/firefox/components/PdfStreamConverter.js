@@ -16,7 +16,7 @@
  */
 /* jshint esnext:true */
 /* globals Components, Services, XPCOMUtils, NetUtil, PrivateBrowsingUtils,
-           dump */
+           dump, NetworkManager */
 
 'use strict';
 
@@ -37,6 +37,8 @@ const MAX_DATABASE_LENGTH = 4096;
 Cu.import('resource://gre/modules/XPCOMUtils.jsm');
 Cu.import('resource://gre/modules/Services.jsm');
 Cu.import('resource://gre/modules/NetUtil.jsm');
+Cu.import('resource://pdf.js/network.js');
+
 
 XPCOMUtils.defineLazyModuleGetter(this, 'PrivateBrowsingUtils',
   'resource://gre/modules/PrivateBrowsingUtils.jsm');
@@ -207,10 +209,20 @@ PdfDataListener.prototype = {
 };
 
 // All the priviledged actions.
-function ChromeActions(domWindow, dataListener, contentDispositionFilename) {
+function ChromeActions(domWindow, contentDispositionFilename, pdfArgs) {
+
   this.domWindow = domWindow;
-  this.dataListener = dataListener;
   this.contentDispositionFilename = contentDispositionFilename;
+  this.pdfArgs = pdfArgs;
+  this.acceptRanges = pdfArgs.acceptRanges;
+  this.dataReceiver = pdfArgs.dataReceiver;
+
+  if (this.acceptRanges) {
+    this.domWindow.addEventListener('unload', function unload(e) {
+      this.dataReceiver.abortXhrs();
+      this.domWindow.removeEventListener(e.type, unload);
+    }.bind(this));
+  }
 }
 
 ChromeActions.prototype = {
@@ -319,39 +331,66 @@ ChromeActions.prototype = {
   getLocale: function() {
     return getStringPref('general.useragent.locale', 'en-US');
   },
-  getLoadingType: function() {
-    return this.dataListener ? 'passive' : 'active';
-  },
   initPassiveLoading: function() {
-    if (!this.dataListener)
-      return false;
-
     var domWindow = this.domWindow;
-    this.dataListener.onprogress =
-      function ChromeActions_dataListenerProgress(loaded, total) {
+
+    if (this.acceptRanges) {
+      // TODO(mack): For range requests, need to fire complete event
+      // so we can delete the dataReceiver
 
       domWindow.postMessage({
-        pdfjsLoadAction: 'progress',
-        loaded: loaded,
-        total: total
-      }, '*');
-    };
-
-    var self = this;
-    this.dataListener.oncomplete =
-      function ChromeActions_dataListenerComplete(data, errorCode) {
-
-      domWindow.postMessage({
-        pdfjsLoadAction: 'complete',
-        data: data,
-        errorCode: errorCode
+        pdfjsLoadAction: 'supportsChunkedLoading',
+        pdfUrl: this.pdfArgs.pdfUrl,
+        totalLength: this.pdfArgs.contentLength
       }, '*');
 
-      delete self.dataListener;
-    };
+      return true;
+    } else if (this.dataReceiver) {
+      this.dataReceiver.onprogress =
+        function ChromeActions_dataListenerProgress(loaded, total) {
 
-    return true;
+        domWindow.postMessage({
+          pdfjsLoadAction: 'progress',
+          loaded: loaded,
+          total: total
+        }, '*');
+      };
+
+      this.dataReceiver.oncomplete =
+        function ChromeActions_dataListenerComplete(data, errorCode) {
+
+        domWindow.postMessage({
+          pdfjsLoadAction: 'complete',
+          data: data,
+          errorCode: errorCode
+        }, '*');
+
+        delete self.dataReceiver;
+      };
+
+      return true;
+    }
+
+    return false;
   },
+
+  requestDataRange: function(args) {
+    if (!this.acceptRanges) {
+      return false;
+    }
+
+    var begin = args.begin;
+    var end = args.end;
+    var domWindow = this.domWindow;
+    this.dataReceiver.requestRange(begin, end, function successCb(args) {
+      domWindow.postMessage({
+        pdfjsLoadAction: 'chunk',
+        begin: args.begin,
+        chunk: args.chunk
+      }, '*');
+    });
+  },
+
   getStrings: function(data) {
     try {
       // Lazy initialization of localizedStrings
@@ -585,41 +624,85 @@ PdfStreamConverter.prototype = {
 
   // nsIStreamListener::onDataAvailable
   onDataAvailable: function(aRequest, aContext, aInputStream, aOffset, aCount) {
-    if (!this.dataListener) {
-      // Do nothing since all the data loading is handled by the viewer.
-      return;
-    }
-
     var binaryStream = this.binaryStream;
     binaryStream.setInputStream(aInputStream);
-    this.dataListener.append(binaryStream.readByteArray(aCount));
+
+    // FIXME(mack): For whatever reason, we need to readByteArray() even when
+    // we are going to be issuing range requests. Otherwise, we get the error:
+    // 'Dom window url did not match request url.' for whatever reason...
+    var chunk = binaryStream.readByteArray(aCount);
+
+    if (this.dataListener) {
+      this.dataListener.append(chunk);
+    }
   },
 
   // nsIRequestObserver::onStartRequest
   onStartRequest: function(aRequest, aContext) {
     // Setup the request so we can use it below.
+    var acceptRanges = false;
+    try {
+      aRequest.QueryInterface(Ci.nsIHttpChannel);
+      if (aRequest.getResponseHeader('Accept-Ranges') === 'bytes') {
+        var hash = aRequest.URI.ref;
+        acceptRanges = hash.indexOf('rangeSupport=disable') < 0;
+      }
+    } catch (e) {}
     aRequest.QueryInterface(Ci.nsIChannel);
+
     aRequest.QueryInterface(Ci.nsIWritablePropertyBag);
-    // Creating storage for PDF data
-    var contentLength = aRequest.contentLength;
-    var dataListener = new PdfDataListener(contentLength);
     var contentDispositionFilename;
     try {
       contentDispositionFilename = aRequest.contentDispositionFilename;
     } catch (e) {}
-    this.dataListener = dataListener;
-    this.binaryStream = Cc['@mozilla.org/binaryinputstream;1']
-                        .createInstance(Ci.nsIBinaryInputStream);
 
     // Change the content type so we don't get stuck in a loop.
     aRequest.setProperty('contentType', aRequest.contentType);
     aRequest.contentType = 'text/html';
+
+    var dataReceiver;
+    var contentLength = aRequest.contentLength;
+    var pdfUrl = aRequest.URI.resolve('');
+    if (acceptRanges) {
+      // Pass all the headers from the original request through
+      var httpHeaderVisitor = {
+        headers: {},
+        visitHeader: function(aHeader, aValue) {
+          if (aHeader === 'Range') {
+            // When loading the PDF from cache, firefox seems to set the Range
+            // request header to fetch only the unfetched portions of the file
+            // (e.g. 'Range: bytes=1024-'). However, we want to set this header
+            // manually to fetch the PDF in chunks.
+            return;
+          }
+          this.headers[aHeader] = aValue;
+        }
+      };
+      aRequest.visitRequestHeaders(httpHeaderVisitor);
+
+      dataReceiver = new NetworkManager(pdfUrl, {
+        httpHeaders: httpHeaderVisitor.headers,
+        getXhr: function getXhr() {
+          const XMLHttpRequest = Components.Constructor(
+              '@mozilla.org/xmlextras/xmlhttprequest;1');
+          return new XMLHttpRequest();
+        }
+      });
+    } else {
+      // Creating storage for PDF data
+      dataReceiver = new PdfDataListener(contentLength);
+      this.dataListener = dataReceiver;
+    }
+
+    this.binaryStream = Cc['@mozilla.org/binaryinputstream;1']
+                        .createInstance(Ci.nsIBinaryInputStream);
 
     // Create a new channel that is viewer loaded as a resource.
     var ioService = Services.io;
     var channel = ioService.newChannel(
                     PDF_VIEWER_WEB_PAGE, null, null);
 
+    var self = this;
     var listener = this.listener;
     // Proxy all the request observer calls, when it gets to onStopRequest
     // we can get the dom window.  We also intentionally pass on the original
@@ -636,10 +719,22 @@ PdfStreamConverter.prototype = {
         // We get the DOM window here instead of before the request since it
         // may have changed during a redirect.
         var domWindow = getDOMWindow(channel);
+
         // Double check the url is still the correct one.
         if (domWindow.document.documentURIObject.equals(aRequest.URI)) {
-          var actions = new ChromeActions(domWindow, dataListener,
-                                          contentDispositionFilename);
+
+          if (acceptRanges) {
+            aRequest.cancel(Cr.NS_BINDING_ABORTED);
+          }
+
+          var pdfArgs = {
+            acceptRanges: acceptRanges,
+            dataReceiver: dataReceiver,
+            pdfUrl: pdfUrl,
+            contentLength: contentLength
+          };
+          var actions = new ChromeActions(domWindow,
+              contentDispositionFilename, pdfArgs);
           var requestListener = new RequestListener(actions);
           domWindow.addEventListener(PDFJS_EVENT_ID, function(event) {
             requestListener.receive(event);
@@ -678,6 +773,8 @@ PdfStreamConverter.prototype = {
 
   // nsIRequestObserver::onStopRequest
   onStopRequest: function(aRequest, aContext, aStatusCode) {
+    delete this.binaryStream;
+
     if (!this.dataListener) {
       // Do nothing
       return;
@@ -688,7 +785,6 @@ PdfStreamConverter.prototype = {
     else
       this.dataListener.error(aStatusCode);
     delete this.dataListener;
-    delete this.binaryStream;
   }
 };
 

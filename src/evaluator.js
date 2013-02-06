@@ -19,7 +19,7 @@
            IDENTITY_MATRIX, info, isArray, isCmd, isDict, isEOF, isName, isNum,
            isStream, isString, JpegStream, Lexer, Metrics, Name, Parser,
            Pattern, PDFImage, PDFJS, serifFonts, stdFontMap, symbolsFonts,
-           TilingPattern, TODO, warn */
+           TilingPattern, TODO, warn, MissingDataException */
 
 'use strict';
 
@@ -177,6 +177,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           translated = this.translateFont(font, xref, resources,
                                           dependency);
         } catch (e) {
+          if (e instanceof MissingDataException) {
+            font.loadedName = undefined;
+            throw e;
+          }
           translated = new ErrorFont(e instanceof Error ? e.message : e);
         }
         font.translated = translated;

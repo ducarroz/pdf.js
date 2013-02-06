@@ -19,6 +19,7 @@
 
 // List of files to include;
 var files = [
+  'network.js',
   'core.js',
   'util.js',
   'canvas.js',
@@ -36,6 +37,8 @@ var files = [
   'parser.js',
   'pattern.js',
   'stream.js',
+  'chunked_stream.js',
+  'pdf_manager.js',
   'worker.js',
   'jpx.js',
   'jbig2.js',

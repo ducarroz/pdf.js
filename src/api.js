@@ -17,7 +17,7 @@
 /* globals CanvasGraphics, combineUrl, createScratchCanvas, error, ErrorFont,
            Font, FontLoader, globalScope, info, isArrayBuffer, loadJpegStream,
            MessageHandler, PDFJS, PDFObjects, Promise, StatTimer, warn,
-           WorkerMessageHandler */
+           WorkerMessageHandler, FirefoxCom, extend */
 
  'use strict';
 
@@ -37,7 +37,7 @@
  *
  * @return {Promise} A promise that is resolved with {PDFDocumentProxy} object.
  */
-PDFJS.getDocument = function getDocument(source) {
+PDFJS.getDocument = function getDocument(source, pdfDataRangeTransport) {
   var workerInitializedPromise, workerReadyPromise, transport;
 
   if (typeof source === 'string') {
@@ -64,7 +64,8 @@ PDFJS.getDocument = function getDocument(source) {
 
   workerInitializedPromise = new PDFJS.Promise();
   workerReadyPromise = new PDFJS.Promise();
-  transport = new WorkerTransport(workerInitializedPromise, workerReadyPromise);
+  transport = new WorkerTransport(workerInitializedPromise,
+      workerReadyPromise, pdfDataRangeTransport);
   workerInitializedPromise.then(function transportInitialized() {
     transport.fetchDocument(params);
   });
@@ -114,10 +115,7 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
      * mapping named destinations to reference numbers.
      */
     getDestinations: function PDFDocumentProxy_getDestinations() {
-      var promise = new PDFJS.Promise();
-      var destinations = this.pdfInfo.destinations;
-      promise.resolve(destinations);
-      return promise;
+      return this.transport.getDestinations();
     },
     /**
      * @return {Promise} A promise that is resolved with an array of all the
@@ -462,7 +460,10 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
  * For internal use only.
  */
 var WorkerTransport = (function WorkerTransportClosure() {
-  function WorkerTransport(workerInitializedPromise, workerReadyPromise) {
+  function WorkerTransport(workerInitializedPromise, workerReadyPromise,
+      pdfDataRangeTransport) {
+    this.pdfDataRangeTransport = pdfDataRangeTransport;
+
     this.workerReadyPromise = workerReadyPromise;
     this.commonObjs = new PDFObjects();
 
@@ -544,6 +545,20 @@ var WorkerTransport = (function WorkerTransportClosure() {
       function WorkerTransport_setupMessageHandler(messageHandler) {
       this.messageHandler = messageHandler;
 
+      var pdfDataRangeTransport = this.pdfDataRangeTransport;
+      if (pdfDataRangeTransport) {
+        pdfDataRangeTransport.addListener(function(args) {
+          messageHandler.send('OnDataRange', args);
+        });
+
+        messageHandler.on('RequestDataRange',
+        function transportDataRange(data) {
+          var begin = data.begin;
+          var end = data.end;
+          pdfDataRangeTransport.requestDataRange(begin, end);
+        }, this);
+      }
+
       messageHandler.on('GetDoc', function transportDoc(data) {
         var pdfInfo = data.pdfInfo;
         var pdfDocument = new PDFDocumentProxy(pdfInfo, this);
@@ -577,6 +592,11 @@ var WorkerTransport = (function WorkerTransportClosure() {
         this.pageCache[pageInfo.pageIndex] = page;
         var promise = this.pagePromises[pageInfo.pageIndex];
         promise.resolve(page);
+      }, this);
+
+      messageHandler.on('GetDestinations', function transportPage(data) {
+        var destinations = data.destinations;
+        this.destinationsPromise.resolve(destinations);
       }, this);
 
       messageHandler.on('GetAnnotations', function transportAnnotations(data) {
@@ -702,7 +722,11 @@ var WorkerTransport = (function WorkerTransportClosure() {
     },
 
     fetchDocument: function WorkerTransport_fetchDocument(source) {
-      this.messageHandler.send('GetDocRequest', {source: source});
+      extend(source, { chunkedViewerLoading: !!this.pdfDataRangeTransport });
+      this.messageHandler.send('GetDocRequest', {
+        source: source,
+        rangeSupport: PDFJS.rangeSupport
+      });
     },
 
     getData: function WorkerTransport_getData(promise) {
@@ -724,6 +748,12 @@ var WorkerTransport = (function WorkerTransportClosure() {
     getAnnotations: function WorkerTransport_getAnnotations(pageIndex) {
       this.messageHandler.send('GetAnnotationsRequest',
         { pageIndex: pageIndex });
+    },
+
+    getDestinations: function WorkerTransport_getDestinations() {
+      this.destinationsPromise = new PDFJS.Promise();
+      this.messageHandler.send('GetDestinationsRequest');
+      return this.destinationsPromise;
     }
   };
   return WorkerTransport;

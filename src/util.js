@@ -139,6 +139,23 @@ function shadow(obj, prop, value) {
   return value;
 }
 
+/**
+ * Copy all of the properties to the first object from subsequent objects
+ * and return the first object. It is in-order, so the later objects will
+ * will override properties of the same name in earlier objects
+ */
+function extend() {
+  assert(arguments.length >= 2, 'At least 2 objects needed to perform extend');
+  var obj = arguments[0];
+  for (var i = 1; i < arguments.length; ++i) {
+    var otherObj = arguments[i];
+    for (var prop in otherObj) {
+      obj[prop] = otherObj[prop];
+    }
+  }
+  return obj;
+}
+
 var PasswordException = (function PasswordExceptionClosure() {
   function PasswordException(msg, code) {
     this.name = 'PasswordException';
@@ -188,6 +205,45 @@ var MissingPDFException = (function MissingPDFExceptionClosure() {
 
   return MissingPDFException;
 })();
+
+var NotImplementedException = (function NotImplementedExceptionClosure() {
+  function NotImplementedException(msg) {
+    this.message = msg;
+  }
+
+  NotImplementedException.prototype = new Error();
+  NotImplementedException.prototype.name = 'NotImplementedException';
+  NotImplementedException.constructor = NotImplementedException;
+
+  return NotImplementedException;
+})();
+
+var MissingDataException = (function MissingDataExceptionClosure() {
+  function MissingDataException(begin, end) {
+    this.begin = begin;
+    this.end = end;
+    this.message = 'Missing data [begin, end)';
+  }
+
+  MissingDataException.prototype = new Error();
+  MissingDataException.prototype.name = 'MissingDataException';
+  MissingDataException.constructor = MissingDataException;
+
+  return MissingDataException;
+})();
+
+var XrefParseException = (function XrefParseExceptionClosure() {
+  function XrefParseException(msg) {
+    this.message = msg;
+  }
+
+  XrefParseException.prototype = new Error();
+  XrefParseException.prototype.name = 'XrefParseException';
+  XrefParseException.constructor = XrefParseException;
+
+  return XrefParseException;
+})();
+
 
 function bytesToString(bytes) {
   var str = '';
@@ -480,6 +536,13 @@ function stringToPDFString(str) {
 
 function stringToUTF8String(str) {
   return decodeURIComponent(escape(str));
+}
+
+function isEmptyObj(obj) {
+  for (var key in obj) {
+    return false;
+  }
+  return true;
 }
 
 function isBool(v) {
