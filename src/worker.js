@@ -170,6 +170,8 @@ var WorkerMessageHandler = {
       var networkManager = new NetworkManager(source.url, {
         httpHeaders: source.httpHeaders
       });
+      // TODO(mack): Need to support progress event for full request
+      // in the case range requests aren't supported
       var fullRequestXhrId = networkManager.requestFull({
         onHeadersReceived: function onHeadersReceived() {
           if (rangeSupport === 'disable') {
@@ -265,7 +267,6 @@ var WorkerMessageHandler = {
 
       getPdfManager(data).then(function() {
         loadDocument(false).then(onSuccess, function(ex) {
-
           // Try again with recoveryMode == true
           if (!(ex instanceof XrefParseException)) {
             onFailure(ex);
@@ -308,6 +309,12 @@ var WorkerMessageHandler = {
       pdfManager.requestAllChunks();
       pdfManager.onLoadedStream().then(function(stream) {
         promise.resolve(stream.bytes);
+      });
+    });
+
+    handler.on('DataLoaded', function wphSetupDataLoaded(data, promise) {
+      pdfManager.onLoadedStream().then(function(stream) {
+        promise.resolve({ length: stream.bytes.byteLength });
       });
     });
 

@@ -199,11 +199,12 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
     this.chunkSize = stream.chunkSize;
     this.length = stream.length;
     this.url = url;
+    var msgHandler = this.msgHandler = args.msgHandler;
 
     if (args.chunkedViewerLoading) {
-      args.msgHandler.on('OnDataRange', this.onReceiveData.bind(this));
+      msgHandler.on('OnDataRange', this.onReceiveData.bind(this));
       this.sendRequest = function ChunkedStreamManager_sendRequest(begin, end) {
-        args.msgHandler.send('RequestDataRange', { begin: begin, end: end });
+        msgHandler.send('RequestDataRange', { begin: begin, end: end });
       };
     } else {
 
@@ -403,6 +404,13 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
         delete this.callbacksByRequest[requestId];
         callback();
       }
+
+      this.msgHandler.send('DocProgress', {
+        loaded: this.stream.numChunksLoaded * this.chunkSize,
+        // FIXME(mack): look into where lengthComputable is set
+        // e.g. code used to be: lengthComputable ? evt.total : void(0)
+        total: this.length
+      });
     },
 
     getBeginChunk: function ChunkedStreamManager_getBeginChunk(begin) {

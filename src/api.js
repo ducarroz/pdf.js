@@ -178,6 +178,13 @@ var PDFDocumentProxy = (function PDFDocumentProxyClosure() {
       this.transport.getData(promise);
       return promise;
     },
+    /**
+     * @return {Promise} A promise that is resolved when the document's data
+     * is loaded
+     */
+    dataLoaded: function PDFDocumentProxy_dataLoaded() {
+      return this.transport.dataLoaded();
+    },
     destroy: function PDFDocumentProxy_destroy() {
       this.transport.destroy();
     }
@@ -667,6 +674,9 @@ var WorkerTransport = (function WorkerTransportClosure() {
       }, this);
 
       messageHandler.on('DocProgress', function transportDocProgress(data) {
+        // TODO(mack): This should be resolved on a different promise that
+        // tracks progress of whole file, since workerReadyPromise is for
+        // file being ready to render, not for when file is fully downloaded
         this.workerReadyPromise.progress({
           loaded: data.loaded,
           total: data.total
@@ -735,6 +745,14 @@ var WorkerTransport = (function WorkerTransportClosure() {
       });
     },
 
+    dataLoaded: function WorkerTransport_dataLoaded() {
+      var promise = new PDFJS.Promise();
+      this.messageHandler.send('DataLoaded', null, function(args) {
+        promise.resolve(args);
+      });
+      return promise;
+    },
+
     getPage: function WorkerTransport_getPage(pageNumber, promise) {
       var pageIndex = pageNumber - 1;
       if (pageIndex in this.pagePromises)
@@ -750,6 +768,8 @@ var WorkerTransport = (function WorkerTransportClosure() {
         { pageIndex: pageIndex });
     },
 
+    // TODO(mack): Use the callback style that getData() uses for resolving
+    // the callback
     getDestinations: function WorkerTransport_getDestinations() {
       this.destinationsPromise = new PDFJS.Promise();
       this.messageHandler.send('GetDestinationsRequest');

@@ -129,6 +129,9 @@ var NetworkPdfManager = (function NetworkPdfManagerClosure() {
       httpHeaders: args.httpHeaders,
       chunkedViewerLoading: args.chunkedViewerLoading
     };
+    // TODO(mack): Have stream manager create the stream, and pass that
+    // through to PDFDocument, rather than having NetworkPdfManager
+    // create the stream
     this.streamManager = new ChunkedStreamManager(
         this.stream, this.pdfUrl, params);
   }
@@ -175,16 +178,8 @@ var NetworkPdfManager = (function NetworkPdfManagerClosure() {
 
     loadPdf: function NetworkPdfManager_loadPdf(begin, end) {
       var promise = new PDFJS.Promise();
+      // TODO(mack): Have stream manager return a promise
       this.streamManager.requestRange(begin, end, function loadMorePdf() {
-        this.msgHandler.send('DocProgress', {
-          // TODO(mack): consider sending these params through args from
-          // StreamManager
-          loaded: this.stream.numChunksLoaded * this.chunkSize,
-          // FIXME(mack): look into where lengthComputable is set
-          // e.g. code used to be: lengthComputable ? evt.total : void(0)
-          total: this.pdfLength
-        });
-
         promise.resolve();
       }.bind(this));
 

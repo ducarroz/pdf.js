@@ -117,17 +117,12 @@ var ProgressBar = (function ProgressBarClosure() {
     updateBar: function ProgressBar_updateBar() {
       if (this._indeterminate) {
         this.div.classList.add('indeterminate');
+        this.div.style.width = this.width + this.units;
         return;
       }
 
-      var progressSize = this.width * this._percent / 100;
-
-      if (this._percent > 95)
-        this.div.classList.add('full');
-      else
-        this.div.classList.remove('full');
       this.div.classList.remove('indeterminate');
-
+      var progressSize = this.width * this._percent / 100;
       this.div.style.width = progressSize + this.units;
     },
 
@@ -1064,9 +1059,6 @@ var PDFView = {
 //#endif
         }
 
-        var loadingIndicator = document.getElementById('loading');
-        loadingIndicator.textContent = mozL10n.get('loading_error_indicator',
-          null, 'Error');
         var moreInfo = {
           message: message
         };
@@ -1238,9 +1230,6 @@ var PDFView = {
       }
     }
 
-    var loadingBox = document.getElementById('loadingBox');
-    loadingBox.setAttribute('hidden', 'true');
-
 //#if !(FIREFOX || MOZCENTRAL)
     var errorWrapper = document.getElementById('errorWrapper');
     errorWrapper.removeAttribute('hidden');
@@ -1295,10 +1284,10 @@ var PDFView = {
     var errorWrapper = document.getElementById('errorWrapper');
     errorWrapper.setAttribute('hidden', 'true');
 
-    var loadingBox = document.getElementById('loadingBox');
-    loadingBox.setAttribute('hidden', 'true');
-    var loadingIndicator = document.getElementById('loading');
-    loadingIndicator.textContent = '';
+    pdfDocument.dataLoaded().then(function() {
+      var loadingBar = document.getElementById('loadingBar');
+      loadingBar.classList.add('hidden');
+    });
 
     var thumbsView = document.getElementById('thumbnailView');
     thumbsView.parentNode.scrollTop = 0;
