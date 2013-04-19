@@ -360,8 +360,115 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         fn = 'paintImageXObject';
 
         PDFImage.buildImage(function(imageObj) {
-            var imgData = imageObj.getImageData();
-            handler.send('obj', [objId, pageIndex, 'Image', imgData]);
+            console.log(timestamp(), "+++ PDFImage.buildImage BEGIN:", objId, globalScope.pdfFingerprint);    // JFD
+
+            // JFD...
+//            var imgData = null;
+//imgData = {
+//    width: imageObj.width,
+//    height: imageObj.height,
+//    data: new Uint8Array(0)
+//};
+//handler.send('obj', [objId, pageIndex, 'Image', imgData]);
+//return;
+
+            // Let's check the local cache first
+            if (globalScope.fs) {
+                var fileName = (globalScope.pdfFingerprint || (globalScope.pdf ? globalScope.pdf.pdfInfo.fingerprint : null)) + ":" + objId;
+
+                var next = function() {
+                    handler.send('obj', [objId, pageIndex, 'Image', imgData]);
+                    console.log(timestamp(), "+++ PDFImage.buildImage END:", objId, imgData);
+                }
+
+                if (globalScope.fs.sync) {
+                    // Webworker version
+                    console.log("filename:", fileName);
+                    try {
+                        var file = globalScope.fs.root.getFile("PDFCache/" + fileName, {create: false});
+                        var reader = new FileReaderSync();
+                        var data = reader.readAsArrayBuffer(file);
+
+                        if (data && data.length) {
+                            imgData = {
+                                width: imageObj.width,
+                                height: imageObj.height,
+                                data: new Uint8Array(data)
+                            };
+                            next();
+                        } else {
+                            console.log("### EMPTY FILE:");
+
+                            imgData = imageObj.getImageData();
+                            next();
+                        }
+                    } catch (ex) {
+                        console.log("### ERROR:");
+
+                        imgData = imageObj.getImageData();
+                        next();
+                    }
+                } else {
+                    // browser version
+                    globalScope.fs.root.getFile("PDFCache/" + fileName, {create: false, exclusive: false}, function(fileEntry) {
+                        console.log("=== FILEENTRY:", fileEntry);
+
+                        fileEntry.file(function(file) {
+                           var reader = new FileReader();
+
+                           reader.onloadend = function(e) {
+                               console.log("DATA from cache:", this.result)
+                               imgData = {
+                                   width: imageObj.width,
+                                   height: imageObj.height,
+                                   data: new Uint8Array(this.result)
+                               };
+                               next();
+                           };
+
+                           reader.readAsArrayBuffer(file);
+                        }, function(error) {
+                            imgData = imageObj.getImageData();
+                            handler.send('obj', [objId, pageIndex, 'Image', imgData]);
+                            console.log(timestamp(), "+++ PDFImage.buildImage END:", objId, imgData);
+                        });
+                    }, function(error) {
+                        imgData = imageObj.getImageData();
+
+                        // Let's write the data to the local file
+                        //----------
+                        fs.root.getFile("PDFCache/" + fileName, {create: true}, function(fileEntry) {
+                          fileEntry.createWriter(function(fileWriter) {
+
+                            fileWriter.onwriteend = function(e) {
+                              console.log('Write completed.', e);
+                                next();
+                            };
+
+                            fileWriter.onerror = function(e) {
+                              console.log('Write failed: ' + e.toString());
+                                next();
+                            };
+
+                            // Create a new Blob and write it to log.txt.
+                            var blob = new Blob([imgData.data], {type: 'application/octet-stream'});
+
+                            fileWriter.write(blob);
+                          }, function(error) {
+                              next();
+                          });
+                        }, function(error) {
+                            next();
+                        });
+                    });
+
+                }
+            } else {
+                imgData = imageObj.getImageData();
+                handler.send('obj', [objId, pageIndex, 'Image', imgData]);
+                console.log(timestamp(), "+++ PDFImage.buildImage END:", objId, imgData);
+            }
+            //... JFD
           }, handler, xref, resources, image, inline);
       }
 
@@ -396,6 +503,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
         if (isCmd(obj)) {
           var cmd = obj.cmd;
+//console.log("--- process command:", cmd);      // JFD
 
           // Check that the command is valid
           var opSpec = OP_MAP[cmd];
@@ -479,6 +587,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                 args = [];
                 continue;
               } else if ('Image' == type.name) {
+//  args = [];    //JFD
+//  continue;     //JFD
+
                 buildPaintImageXObject(xobj, false);
               } else {
                 error('Unhandled XObject subtype ' + type.name);
@@ -487,6 +598,8 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           } else if (cmd == 'Tf') { // eagerly collect all fonts
             args[0] = handleSetFont(args[0].name);
           } else if (cmd == 'EI') {
+//args = [];    //JFD
+//continue;     //JFD
             buildPaintImageXObject(args[0], true);
           }
 

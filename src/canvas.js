@@ -139,6 +139,7 @@ function addContextCurrentTransform(ctx) {
     };
 
     ctx.rotate = function ctxRotate(angle) {
+ console.log("***** ROTATE:", angle)
       var cosValue = Math.cos(angle);
       var sinValue = Math.sin(angle);
 
@@ -214,7 +215,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
   // before it stops and shedules a continue of execution.
   var EXECUTION_TIME = 15;
 
-  function CanvasGraphics(canvasCtx, commonObjs, objs, textLayer, imageLayer) {
+  function CanvasGraphics(canvasCtx, commonObjs, objs, textLayer, imageLayer, graphicLayer) {
     this.ctx = canvasCtx;
     this.current = new CanvasExtraState();
     this.stateStack = [];
@@ -225,6 +226,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     this.objs = objs;
     this.textLayer = textLayer;
     this.imageLayer = imageLayer;
+    this.graphicLayer = graphicLayer;
     this.groupStack = [];
     if (canvasCtx) {
       addContextCurrentTransform(canvasCtx);
@@ -349,7 +351,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         widthScale /= 2;
       }
     }
-
+console.log("resizing temp canvas to:", width, height)
     var tmpCanvas = createScratchCanvas(width, height);
     var tmpCtx = tmpCanvas.getContext('2d');
     putBinaryImageData(tmpCtx, pixels.subarray(0, width * height * 4),
@@ -426,6 +428,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       if (this.imageLayer) {
         this.imageLayer.beginLayout();
       }
+      if (this.graphicLayer) {
+        this.graphicLayer.beginLayout();
+      }
     },
 
     executeOperatorList: function CanvasGraphics_executeOperatorList(
@@ -450,6 +455,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var fnName;
       var slowCommands = this.slowCommands;
 
+ var graphicCommandLogCount = 0,
+     graphicCommands = ["moveTo", "lineTo", "curveTo"];
+
       while (true) {
         if (stepper && i === stepper.nextBreakPoint) {
           stepper.breakIt(i, continueCallback);
@@ -457,6 +465,23 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         }
 
         fnName = fnArray[i];
+
+        var log = argsArray[i].join(", ");
+        if (log == "" && argsArray[i].length > 0) {
+            log = argsArray[i];
+        }
+
+        if (graphicCommands.indexOf(fnName) !== -1) {
+            graphicCommandLogCount ++;
+        } else {
+            graphicCommandLogCount = 0;
+        }
+
+          if (graphicCommandLogCount == 10) {
+              console.log("   ---op: [...snap...]");        //JFD
+          } else if (graphicCommandLogCount < 10) {
+              console.log("   ---op:", fnName, log);        //JFD
+          }
 
         if (fnName !== 'dependency') {
           this[fnName].apply(this, argsArray[i]);
@@ -507,6 +532,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       }
       if (this.imageLayer) {
         this.imageLayer.endLayout();
+      }
+      if (this.graphicLayer) {
+        this.graphicLayer.endLayout();
       }
     },
 
@@ -623,36 +651,61 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
     // Path
     moveTo: function CanvasGraphics_moveTo(x, y) {
+      if (this.graphicLayer) {
+          this.graphicLayer.moveTo(this, x, y);
+      }
       this.ctx.moveTo(x, y);
       this.current.setCurrentPoint(x, y);
     },
     lineTo: function CanvasGraphics_lineTo(x, y) {
+      if (this.graphicLayer) {
+        this.graphicLayer.lineTo(this, x, y);
+      }
       this.ctx.lineTo(x, y);
       this.current.setCurrentPoint(x, y);
     },
     curveTo: function CanvasGraphics_curveTo(x1, y1, x2, y2, x3, y3) {
+      if (this.graphicLayer) {
+        this.graphicLayer.curveTo(this, x1, y1, x2, y2, x3, y3);
+      }
       this.ctx.bezierCurveTo(x1, y1, x2, y2, x3, y3);
       this.current.setCurrentPoint(x3, y3);
     },
     curveTo2: function CanvasGraphics_curveTo2(x2, y2, x3, y3) {
       var current = this.current;
+      if (this.graphicLayer) {
+        this.graphicLayer.curveTo2(this, x2, y2, x3, y3);
+      }
       this.ctx.bezierCurveTo(current.x, current.y, x2, y2, x3, y3);
       current.setCurrentPoint(x3, y3);
     },
     curveTo3: function CanvasGraphics_curveTo3(x1, y1, x3, y3) {
+      if (this.graphicLayer) {
+        this.graphicLayer.curveTo3(this, x1, y1, x3, y3);
+      }
       this.curveTo(x1, y1, x3, y3, x3, y3);
       this.current.setCurrentPoint(x3, y3);
     },
     closePath: function CanvasGraphics_closePath() {
+      if (this.graphicLayer) {
+        this.graphicLayer.closePath(this);
+      }
       this.ctx.closePath();
     },
     rectangle: function CanvasGraphics_rectangle(x, y, width, height) {
+      if (this.graphicLayer) {
+        this.graphicLayer.rectangle(this, x, y, width, height);
+      }
       this.ctx.rect(x, y, width, height);
     },
     stroke: function CanvasGraphics_stroke(consumePath) {
       consumePath = typeof consumePath !== 'undefined' ? consumePath : true;
       var ctx = this.ctx;
       var strokeColor = this.current.strokeColor;
+
+      if (this.graphicLayer) {
+        this.graphicLayer.stroke(this, consumePath);
+      }
       if (this.current.lineWidth === 0)
         ctx.lineWidth = this.getSinglePixelWidth();
       // For stroke we want to temporarily change the global alpha to the
@@ -683,6 +736,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var ctx = this.ctx;
       var fillColor = this.current.fillColor;
 
+      if (this.graphicLayer) {
+        this.graphicLayer.fill(this, consumePath);
+      }
       if (fillColor && fillColor.hasOwnProperty('type') &&
           fillColor.type === 'Pattern') {
         ctx.save();
@@ -722,6 +778,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.restoreFillRule(savedFillRule);
     },
     endPath: function CanvasGraphics_endPath() {
+      if (this.graphicLayer) {
+        this.graphicLayer.endPath(this);
+      }
       this.consumePath();
     },
 
@@ -882,6 +941,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.current.y = this.current.lineY = 0;
     },
     nextLine: function CanvasGraphics_nextLine() {
+        console.log("+++ nextline");    //JFD
       this.moveText(0, this.current.leading);
     },
     applyTextTransforms: function CanvasGraphics_applyTextTransforms() {
@@ -907,6 +967,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         geometry.y = bl[1];
         geometry.hScale = tr[0] - bl[0];
         geometry.vScale = tr[1] - bl[1];
+        geometry.textHScale = this.current.textHScale / bl[0];           // JFD: added
+
       }
       geometry.spaceWidth = font.spaceWidth;
       geometry.fontName = font.loadedName;
@@ -916,6 +978,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     },
 
     showText: function CanvasGraphics_showText(str, skipTextSelection) {
+
       var ctx = this.ctx;
       var current = this.current;
       var font = current.font;
@@ -929,14 +992,26 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var glyphsLength = glyphs.length;
       var textLayer = this.textLayer;
       var geom;
-      var textSelection = textLayer && !skipTextSelection ? true : false;
+      var textSelection = textLayer /*&& !skipTextSelection ? true : false*/;       // JFD
       var textRenderingMode = current.textRenderingMode;
       var canvasWidth = 0.0;
       var vertical = font.vertical;
       var defaultVMetrics = font.defaultVMetrics;
 
+//        console.log("  ---text:", str, current)
+
+        var transform;         //JFD
+
+        if (!skipTextSelection && this.textLayer) {
+            this.save();
+            this.textLayer.showText(this, str);
+            this.restore();
+        }
+
+
       // Type3 fonts - each glyph is a "mini-PDF"
       if (font.coded) {
+          console.log("--- FONT is CODED!")
         ctx.save();
         ctx.transform.apply(ctx, current.textMatrix);
         ctx.translate(current.x, current.y);
@@ -997,6 +1072,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
         ctx.lineWidth = lineWidth;
 
+transform = ctx.mozCurrentTransform.slice(0, 6);    // JFD make a copy
+
         var x = 0;
         for (var i = 0; i < glyphsLength; ++i) {
           var glyph = glyphs[i];
@@ -1031,6 +1108,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
               scaledAccentX = scaledX + accent.offset.x / fontSizeScale;
               scaledAccentY = scaledY - accent.offset.y / fontSizeScale;
             }
+//console.log("--- drawchar: ", textRenderingMode, ctx.mozCurrentTransform.slice(0, 6), scaledX, scaledY, character, accent ? accent.fontChar : "")
+
             switch (textRenderingMode) {
               default: // other unsupported rendering modes
               case TextRenderingMode.FILL:
@@ -1067,6 +1146,27 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
                 clipCtx.fillText(accent.fontChar, scaledAccentX, scaledAccentY);
               }
             }
+
+            //JFD
+            if (textSelection) {
+              geom.canvasWidth = canvasWidth;
+              geom.transform = transform;   // JFD
+            }
+
+            if (vertical) {
+              var vmetric = font.defaultVMetrics;
+              geom.x += vmetric[1] * fontSize * current.fontMatrix[0] /
+                          fontSizeScale * geom.hScale;
+              geom.y += vmetric[2] * fontSize * current.fontMatrix[0] /
+                          fontSizeScale * geom.vScale;
+            }
+//              console.log("transform:", transform)
+//              console.log("width:", charWidth);
+//              console.log("x:", x);
+//              console.log("geom.hScale:", geom.hScale, "fontSizeScale", fontSizeScale);
+            if (this.textLayer) {
+                this.textLayer.appendCharacter(character, geom, ctx.mozCurrentTransform[4] + (x * geom.hScale), geom.y, {color:this.current.fillColor, font:this.ctx.font});       // JFD: added str and font param
+            }
           }
 
           x += charWidth;
@@ -1083,6 +1183,8 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
       if (textSelection) {
         geom.canvasWidth = canvasWidth;
+        geom.transform = transform;   // JFD
+
         if (vertical) {
           var vmetric = font.defaultVMetrics;
           geom.x += vmetric[1] * fontSize * current.fontMatrix[0] /
@@ -1090,7 +1192,11 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           geom.y += vmetric[2] * fontSize * current.fontMatrix[0] /
                     fontSizeScale * geom.vScale;
         }
-        this.textLayer.appendText(geom);
+        var style = {
+            color: this.current.fillColor,
+            font: this.ctx.font
+        }
+        this.textLayer.appendText(geom, str, font, style);       // JFD: added str and font param
       }
 
       return canvasWidth;
@@ -1110,9 +1216,18 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var vertical = font.vertical;
       var spacingAccumulator = 0;
 
+      var transform;            // JFD
+
+      if (this.textLayer) {
+          this.save();
+          this.textLayer.showText(this, arr);
+          this.restore();
+      }
+
       if (textSelection) {
         ctx.save();
         this.applyTextTransforms();
+        transform = ctx.mozCurrentTransform.slice(0, 6);    // JFD make a copy
         geom = this.createTextGeometry();
         ctx.restore();
       }
@@ -1141,8 +1256,11 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         }
       }
 
-      if (textSelection) {
+      if (textSelection && 0) {         // JFD
         geom.canvasWidth = canvasWidth;
+        geom.vertical = vertical;                // JFD: added
+        geom.transform = transform;              // JFD
+
         if (vertical) {
           var fontSizeScale = current.fontSizeScale;
           var vmetric = font.defaultVMetrics;
@@ -1151,7 +1269,11 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           geom.y += vmetric[2] * fontSize * current.fontMatrix[0] /
                     fontSizeScale * geom.vScale;
         }
-        this.textLayer.appendText(geom);
+        var style = {
+            color: this.current.fillColor,
+            font: this.ctx.font
+        }
+        this.textLayer.appendText(geom, arr, font, style);   // JFD: added arr and font param
       }
     },
     nextLineShowText: function CanvasGraphics_nextLineShowText(text) {
@@ -1451,10 +1573,12 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     },
 
     paintJpegXObject: function CanvasGraphics_paintJpegXObject(objId, w, h) {
+console.log("--paintJpegXObject: BEGIN")
       var domImage = this.objs.get(objId);
       if (!domImage) {
         error('Dependent image isn\'t ready yet');
       }
+console.log("--paintJpegXObject: GOT AN IMAGEIMAGE")
 
       this.save();
 
@@ -1466,16 +1590,24 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
                     0, -h, w, h);
       if (this.imageLayer) {
         var currentTransform = ctx.mozCurrentTransformInverse;
-        var position = this.getCanvasPosition(0, 0);
+        var position = this.getCanvasPosition(0, -h),      // JFD fix bug?
+            transform = ctx.mozCurrentTransform;            // JFD
+
+        transform[4] = position[0];
+        transform[5] = position[1];
+
+console.log("---calling appendImage[#1]");  // JFD
         this.imageLayer.appendImage({
           objId: objId,
           left: position[0],
           top: position[1],
           width: w / currentTransform[0],
-          height: h / currentTransform[3]
-        });
+          height: h / currentTransform[3],
+          transform: transform   // JFD
+        }, domImage);       // JFD: added domImage
       }
       this.restore();
+console.log("--paintJpegXObject: END")
     },
 
     paintImageMaskXObject: function CanvasGraphics_paintImageMaskXObject(
@@ -1550,6 +1682,11 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.save();
       // scale the image to the unit square
       ctx.scale(1 / width, -1 / height);
+          console.log("====================================================")
+          console.log("imgData.width:", imgData.width);
+          console.log("imgData.height:", imgData.height);
+          console.log("currentTransform:", ctx.mozCurrentTransform);
+          console.log("currentTransformInverse:", ctx.mozCurrentTransformInverse);
 
       var currentTransform = ctx.mozCurrentTransformInverse;
       var widthScale = Math.max(Math.abs(currentTransform[0]), 1);
@@ -1557,7 +1694,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var tmpCanvas = createScratchCanvas(width, height);
       var tmpCtx = tmpCanvas.getContext('2d');
 
-      if (widthScale > 2 || heightScale > 2) {
+      if ((widthScale > 2 || heightScale > 2) && 0) {   // JFD: we need the full resolution for the HTML version, we will do some reduction later
         // canvas does not resize well large images to small -- using simple
         // algorithm to perform pre-scaling
         tmpCanvas = prescaleImage(imgData.data,
@@ -1567,22 +1704,32 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
                                  0, -height, width, height);
       } else {
         if (typeof ImageData !== 'undefined' && imgData instanceof ImageData) {
+console.log("...putImageData")
           tmpCtx.putImageData(imgData, 0, 0);
         } else {
+console.log("...putBinaryImageData")
           putBinaryImageData(tmpCtx, imgData.data, width, height);
         }
         ctx.drawImage(tmpCanvas, 0, -height);
       }
 
+          console.log("image width:", width / currentTransform[0]);
+          console.log("image height:", height / currentTransform[3]);
       if (this.imageLayer) {
-        var position = this.getCanvasPosition(0, -height);
+        var position = this.getCanvasPosition(0, -height),
+            transform = ctx.mozCurrentTransform.slice(0, 6);
+
+          transform[4] = position[0];
+          transform[5] = position[1];
+console.log("---calling appendImage[#2]", transform);  // JFD
         this.imageLayer.appendImage({
           imgData: imgData,
           left: position[0],
           top: position[1],
           width: width / currentTransform[0],
-          height: height / currentTransform[3]
-        });
+          height: height / currentTransform[3],
+          transform: transform       // JFD
+        }, tmpCanvas);  // JFD: added tmpCanvas param
       }
       this.restore();
     },
@@ -1606,13 +1753,15 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
                       0, -1, 1, 1);
         if (this.imageLayer) {
           var position = this.getCanvasPosition(entry.x, entry.y);
+console.log("---calling appendImage[#3]", ctx.mozCurrentTransformInverse);  // JFD
           this.imageLayer.appendImage({
             imgData: imgData,
             left: position[0],
             top: position[1],
             width: w,
-            height: h
-          });
+            height: h,
+            transform: entry.transform.slice(0, 6)      // JFD TODO: need to be verified, likely to be bogus!!!
+          }, tmpCanvas);        // JFD: added tmpCanvas param
         }
         ctx.restore();
       }

@@ -25,6 +25,7 @@ var PDFImage = (function PDFImageClosure() {
    * when the image data is ready.
    */
   function handleImageData(handler, xref, res, image, promise) {
+    console.log(timestamp(), "... handleImageData: begin");    // JFD
     if (image instanceof JpegStream && image.isNativelyDecodable(xref, res)) {
       // For natively supported jpegs send them to the main thread for decoding.
       var dict = image.dict;
@@ -34,9 +35,11 @@ var PDFImage = (function PDFImageClosure() {
       handler.send('JpegDecode', [image.getIR(), numComps], function(message) {
         var data = message.data;
         var stream = new Stream(data, 0, data.length, image.dict);
+          console.log(timestamp(), "... handleImageData: end");    // JFD
         promise.resolve(stream);
       });
     } else {
+        console.log(timestamp(), "... handleImageData: end");    // JFD
       promise.resolve(image);
     }
   }
@@ -50,6 +53,7 @@ var PDFImage = (function PDFImageClosure() {
     return value < 0 ? 0 : value > max ? max : value;
   }
   function PDFImage(xref, res, image, inline, smask, mask) {
+      console.log(timestamp(), "... PDFImage: begin");    // JFD
     this.image = image;
     if (image.getParams) {
       // JPX/JPEG2000 streams directly contain bits per component
@@ -120,6 +124,7 @@ var PDFImage = (function PDFImageClosure() {
         this.mask = mask;
       }
     }
+      console.log(timestamp(), "... PDFImage: end");    // JFD
   }
   /**
    * Handles processing of image data and calls the callback with an argument
@@ -127,6 +132,10 @@ var PDFImage = (function PDFImageClosure() {
    */
   PDFImage.buildImage = function PDFImage_buildImage(callback, handler, xref,
                                                      res, image, inline) {
+      if (globalScope.PDFJS.disableWorker)  // JFD
+          console.log(timestamp(), "... buildImage: begin" /*, xref, res, image, inline*/);    // JFD
+      else
+        console.log(timestamp(), "... buildImage: begin");    // JFD
     var imageDataPromise = new Promise();
     var smaskPromise = new Promise();
     var maskPromise = new Promise();
@@ -137,6 +146,7 @@ var PDFImage = (function PDFImageClosure() {
       var imageData = results[0], smaskData = results[1], maskData = results[2];
       var image = new PDFImage(xref, res, imageData, inline, smaskData,
                                maskData);
+            console.log(timestamp(), "... buildImage: end");    // JFD
       callback(image);
     });
 
@@ -179,6 +189,7 @@ var PDFImage = (function PDFImageClosure() {
    */
   PDFImage.resize = function PDFImage_resize(pixels, bpc, components,
                                              w1, h1, w2, h2) {
+      console.log(timestamp(), "... resize: begin");    // JFD
     var length = w2 * h2 * components;
     var temp = bpc <= 8 ? new Uint8Array(length) :
         bpc <= 16 ? new Uint16Array(length) : new Uint32Array(length);
@@ -202,6 +213,7 @@ var PDFImage = (function PDFImageClosure() {
         }
       }
     }
+      console.log(timestamp(), "... resize: end");    // JFD
     return temp;
   };
 
@@ -217,6 +229,7 @@ var PDFImage = (function PDFImageClosure() {
       return Math.max(this.height, this.smask.height);
     },
     getComponents: function PDFImage_getComponents(buffer) {
+        console.log(timestamp(), "... getComponents: begin");    // JFD
       var bpc = this.bpc;
       var needsDecode = this.needsDecode;
       var decodeMap = this.decode;
@@ -302,9 +315,11 @@ var PDFImage = (function PDFImageClosure() {
           bits = remainingBits;
         }
       }
+        console.log(timestamp(), "... getComponents: end");    // JFD
       return output;
     },
     getOpacity: function PDFImage_getOpacity(width, height, image) {
+        console.log(timestamp(), "... getOpacity: begin");    // JFD
       var smask = this.smask;
       var mask = this.mask;
       var originalWidth = this.width;
@@ -358,10 +373,12 @@ var PDFImage = (function PDFImageClosure() {
         for (var i = 0, ii = width * height; i < ii; ++i)
           buf[i] = 255;
       }
+        console.log(timestamp(), "... getOpacity: end");    // JFD
       return buf;
     },
     applyStencilMask: function PDFImage_applyStencilMask(buffer,
                                                          inverseDecode) {
+        console.log(timestamp(), "... applyStencilMask: begin");    // JFD
       var width = this.width, height = this.height;
       var bitStrideLength = (width + 7) >> 3;
       var imgArray = this.getImageBytes(bitStrideLength * height);
@@ -383,8 +400,10 @@ var PDFImage = (function PDFImageClosure() {
           mask >>= 1;
         }
       }
+        console.log(timestamp(), "... applyStencilMask: end");    // JFD
     },
     fillRgbaBuffer: function PDFImage_fillRgbaBuffer(buffer, width, height) {
+        console.log(timestamp(), "... fillRgbaBuffer: begin");    // JFD
       var numComps = this.numComps;
       var originalWidth = this.width;
       var originalHeight = this.height;
@@ -414,8 +433,10 @@ var PDFImage = (function PDFImageClosure() {
         buffer[i + 2] = comps[compsPos++];
         buffer[i + 3] = opacity[opacityPos++];
       }
+        console.log(timestamp(), "... fillRgbaBuffer: end");    // JFD
     },
     fillGrayBuffer: function PDFImage_fillGrayBuffer(buffer) {
+        console.log(timestamp(), "... fillGrayBuffer: begin");    // JFD
       var numComps = this.numComps;
       if (numComps != 1)
         error('Reading gray scale from a color image: ' + numComps);
@@ -434,8 +455,10 @@ var PDFImage = (function PDFImageClosure() {
       var scale = 255 / ((1 << bpc) - 1);
       for (var i = 0; i < length; ++i)
         buffer[i] = (scale * comps[i]) | 0;
+        console.log(timestamp(), "... fillGrayBuffer: end");    // JFD
     },
     getImageData: function PDFImage_getImageData() {
+        console.log(timestamp(), "... getImageData: begin");    // JFD
       var drawWidth = this.drawWidth;
       var drawHeight = this.drawHeight;
       var imgData = {
@@ -445,6 +468,7 @@ var PDFImage = (function PDFImageClosure() {
       };
       var pixels = imgData.data;
       this.fillRgbaBuffer(pixels, drawWidth, drawHeight);
+        console.log(timestamp(), "... getImageData: end", imgData);    // JFD
       return imgData;
     },
     getImageBytes: function PDFImage_getImageBytes(length) {

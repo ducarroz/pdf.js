@@ -1190,6 +1190,7 @@ var PDFView = {
    */
   getOutputScale: function pdfViewGetOutputDPI() {
     var pixelRatio = 'devicePixelRatio' in window ? window.devicePixelRatio : 1;
+      console.log("============= GETOUTPUTSCALE")
     return {
       sx: pixelRatio,
       sy: pixelRatio,

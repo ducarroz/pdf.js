@@ -329,6 +329,7 @@ var WorkerMessageHandler = {
     });
 
     handler.on('RenderPageRequest', function wphSetupRenderPage(data) {
+        console.log("*** RenderPageRequest", globalScope.pdfFingerprint);               //JFD
       var pageNum = data.pageIndex + 1;
       // TODO(mack): The start time should really be after we get the page...
       var start = Date.now();

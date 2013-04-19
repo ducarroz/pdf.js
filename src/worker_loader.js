@@ -17,6 +17,10 @@
 
 'use strict';
 
+//JFD...
+var origin_time = new Date().getTime();
+var timestamp = function() {return "{" + ((new Date().getTime() - origin_time) % 600000) / 1000 + "} "};
+
 // List of files to include;
 var files = [
   'network.js',
@@ -45,6 +49,12 @@ var files = [
   'bidi.js',
   '../external/jpgjs/jpg.js'
 ];
+
+// JFD...
+//this.requestFileSystem  = this.requestFileSystemSync || this.webkitRequestFileSystemSync;
+//this.fs = this.requestFileSystem(this.TEMPORARY, 1 * 1024 * 1024 * 1024);
+//this.fs.sync = true;
+//...JFD
 
 // Load all the files.
 for (var i = 0; i < files.length; i++) {
