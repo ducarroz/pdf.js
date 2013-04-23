@@ -221,7 +221,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
   // before it stops and shedules a continue of execution.
   var EXECUTION_TIME = 15;
 
-  function CanvasGraphics(canvasCtx, commonObjs, objs, textLayer, imageLayer) {
+  function CanvasGraphics(canvasCtx, commonObjs, objs, textLayer, imageLayer, preProcessor) {
     this.ctx = canvasCtx;
     this.current = new CanvasExtraState();
     this.stateStack = [];
@@ -232,6 +232,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     this.objs = objs;
     this.textLayer = textLayer;
     this.imageLayer = imageLayer;
+    this.preProcessor = preProcessor;
     this.groupStack = [];
     if (canvasCtx) {
       addContextCurrentTransform(canvasCtx);
@@ -450,6 +451,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       if (this.imageLayer) {
         this.imageLayer.beginLayout();
       }
+      if (this.preProcessor) {
+        this.preProcessor.beginLayout();
+      }
     },
 
     executeOperatorList: function CanvasGraphics_executeOperatorList(
@@ -474,6 +478,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var fnName;
       var slowCommands = this.slowCommands;
 
+      var graphicCommandLogCount = 0;
+      var graphicCommands = ["moveTo", "lineTo", "curveTo"];
+
       while (true) {
         if (stepper && i === stepper.nextBreakPoint) {
           stepper.breakIt(i, continueCallback);
@@ -482,8 +489,35 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
         fnName = fnArray[i];
 
+        var log = argsArray[i].join(", ");
+
+        if (log == "" && argsArray[i].length > 0) {
+          log = argsArray[i];
+        }
+
+        if (graphicCommands.indexOf(fnName) !== -1) {
+          graphicCommandLogCount ++;
+        } else {
+          graphicCommandLogCount = 0;
+        }
+
+        if (graphicCommandLogCount == 10) {
+          console.log("   ---op: [...snap...]");
+        } else if (graphicCommandLogCount < 10) {
+          console.log("   ---op:", fnName, log);
+        }
+
         if (fnName !== 'dependency') {
-          this[fnName].apply(this, argsArray[i]);
+          var skipOperator = false;
+          if (this.preProcessor && this.preProcessor[fnName]) {
+            var args = argsArray[i];
+            args.unshift(this);
+            skipOperator = this.preProcessor[fnName].apply(this.preProcessor, args);
+            args.shift();
+          }
+          if (skipOperator !== true) {
+            this[fnName].apply(this, argsArray[i]);
+          }
         } else {
           var deps = argsArray[i];
           for (var n = 0, nn = deps.length; n < nn; n++) {
@@ -531,6 +565,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       }
       if (this.imageLayer) {
         this.imageLayer.endLayout();
+      }
+      if (this.preProcessor) {
+        this.preProcessor.endLayout();
       }
     },
 
@@ -1525,6 +1562,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         var currentTransform = ctx.mozCurrentTransformInverse;
         var position = this.getCanvasPosition(0, 0);
         this.imageLayer.appendImage({
+          context: this,
           objId: objId,
           left: position[0],
           top: position[1],
@@ -1634,6 +1672,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       if (this.imageLayer) {
         var position = this.getCanvasPosition(0, -height);
         this.imageLayer.appendImage({
+          context: this,
           imgData: imgData,
           left: position[0],
           top: position[1],
@@ -1664,6 +1703,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         if (this.imageLayer) {
           var position = this.getCanvasPosition(entry.x, entry.y);
           this.imageLayer.appendImage({
+            context: this,
             imgData: imgData,
             left: position[0],
             top: position[1],
@@ -1743,7 +1783,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           transform[0] * x + transform[2] * y + transform[4],
           transform[1] * x + transform[3] * y + transform[5]
         ];
-    }
+    },
+
+    putBinaryImageData: putBinaryImageData
   };
 
   return CanvasGraphics;
