@@ -159,6 +159,9 @@ var WorkerMessageHandler = {
 
       var source = data.source;
       var disableRange = data.disableRange;
+
+      PDFJS.useExternalDiskCache = data.useExternalDiskCache || false;
+
       if (source.data) {
         pdfManager = new LocalPdfManager(source.data, source.password);
         pdfManagerPromise.resolve();

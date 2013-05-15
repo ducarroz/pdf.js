@@ -226,12 +226,11 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
     },
 
     buildPaintImageXObject: function PartialEvaluator_buildPaintImageXObject(
-                                resources, image, inline) {
+                                resources, image, inline, object_reference_id) {
       var self = this;
       var dict = image.dict;
       var w = dict.get('Width', 'W');
       var h = dict.get('Height', 'H');
-
       var dependencies = {};
       var retData = {
         dependencies: dependencies
@@ -261,8 +260,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var mask = dict.get('Mask') || false;
 
       var SMALL_IMAGE_DIMENSIONS = 200;
+
       // Inlining small images into the queue as RGB data
-      if (inline && !softMask && !mask &&
+      if (!PDFJS.useExternalDiskCache && inline && !softMask && !mask &&
           !(image instanceof JpegStream) &&
           (w + h) < SMALL_IMAGE_DIMENSIONS) {
         var imageObj = new PDFImage(this.xref, resources, image,
@@ -284,17 +284,43 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           image.isNativelySupported(this.xref, resources)) {
         // These JPEGs don't need any more processing so we can just send it.
         retData.fn = 'paintJpegXObject';
-        this.handler.send(
-            'obj', [objId, this.pageIndex, 'JpegStream', image.getIR()]);
-        return retData;
+        if (PDFJS.useExternalDiskCache) {
+            this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', object_reference_id], function(url) {
+                if (url && url.length) {
+                    self.handler.send(
+                        'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id]);
+                } else {
+                    self.handler.send(
+                        'obj', [objId, self.pageIndex, 'JpegStream', image.getIR(), object_reference_id]);
+                }
+            });
+        } else {
+            this.handler.send(
+                'obj', [objId, this.pageIndex, 'JpegStream', image.getIR(), object_reference_id]);
+        }
+      } else {
+          retData.fn = 'paintImageXObject';
+
+          if (PDFJS.useExternalDiskCache) {
+              this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', object_reference_id], function(url) {
+                  if (url && url.length) {
+                      // JFD TODO: we need to get the image dimensions and pass them along...
+                      self.handler.send(
+                         'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id]);
+                  } else {
+                      PDFImage.buildImage(function(imageObj) {
+                          var imgData = imageObj.getImageData();
+                          self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id]);
+                        }, self.handler, self.xref, resources, image, inline);
+                  }
+              });
+          } else {
+              PDFImage.buildImage(function(imageObj) {
+                  var imgData = imageObj.getImageData();
+                  self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id]);
+                }, self.handler, self.xref, resources, image, inline);
+          }
       }
-
-      retData.fn = 'paintImageXObject';
-
-      PDFImage.buildImage(function(imageObj) {
-          var imgData = imageObj.getImageData();
-          self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData]);
-        }, self.handler, self.xref, resources, image, inline);
 
       return retData;
     },
@@ -701,7 +727,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                     args = [self.buildFormXObject(resources, xobj)];
                   } else if ('Image' == type.name) {
                     var data = self.buildPaintImageXObject(
-                        resources, xobj, false);
+                        resources, xobj, false, xobjs.getRaw(name));
                     Util.extendObj(dependencies, data.dependencies);
                     self.insertDependencies(queue, data.dependencies);
                     fn = data.fn;
@@ -715,7 +741,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                 args = [self.handleSetFont(resources, args)];
               } else if (cmd == 'EI') {
                 var data = self.buildPaintImageXObject(
-                    resources, args[0], true);
+                    resources, args[0], true, raw);
                 Util.extendObj(dependencies, data.dependencies);
                 self.insertDependencies(queue, data.dependencies);
                 fn = data.fn;

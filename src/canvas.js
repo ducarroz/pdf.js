@@ -1560,7 +1560,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
                     0, -h, w, h);
       if (this.imageLayer) {
         var currentTransform = ctx.mozCurrentTransformInverse;
-        var position = this.getCanvasPosition(0, 0);
+        var position = this.getCanvasPosition(0, -h);
         this.imageLayer.appendImage({
           context: this,
           objId: objId,
@@ -1629,11 +1629,14 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       }
     },
 
-    paintImageXObject: function CanvasGraphics_paintImageXObject(objId) {
+    paintImageXObject: function CanvasGraphics_paintImageXObject(objId, w, h) {
       var imgData = this.objs.get(objId);
       if (!imgData)
         error('Dependent image isn\'t ready yet');
 
+        if (imgData instanceof Image) {
+            return this.paintJpegXObject(objId, w, h);
+        }
       this.paintInlineImageXObject(imgData);
     },
 
@@ -1652,7 +1655,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var tmpCanvas = createScratchCanvas(width, height);
       var tmpCtx = tmpCanvas.getContext('2d');
 
-      if (widthScale > 2 || heightScale > 2) {
+      if (!PDFJS.disableImagePrescale && (widthScale > 2 || heightScale > 2)) {
         // canvas does not resize well large images to small -- using simple
         // algorithm to perform pre-scaling
         tmpCanvas = prescaleImage(imgData.data,

@@ -1108,6 +1108,14 @@ var PDFObjects = (function PDFObjectsClosure() {
     },
 
     clear: function PDFObjects_clear() {
+      var objects = this.objs,
+          i;
+
+      for (i in objects) {
+          if (objects.hasOwnProperty(i)) {
+              delete objects[i];
+          }
+      }
       this.objs = {};
     }
   };

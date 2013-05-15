@@ -650,31 +650,66 @@ var WorkerTransport = (function WorkerTransportClosure() {
       messageHandler.on('obj', function transportObj(data) {
         var id = data[0];
         var pageIndex = data[1];
-        var type = data[2];
         var pageProxy = this.pageCache[pageIndex];
         if (pageProxy.objs.hasData(id))
           return;
 
-        switch (type) {
-          case 'JpegStream':
-            var imageData = data[3];
-            loadJpegStream(id, imageData, pageProxy.objs);
-            break;
-          case 'Image':
-            var imageData = data[3];
-            pageProxy.objs.resolve(id, imageData);
+        var _processImage = function(data) {
+            var type = data[2];
 
-            // heuristics that will allow not to store large data
-            var MAX_IMAGE_SIZE_TO_STORE = 8000000;
-            if ('data' in imageData &&
-                imageData.data.length > MAX_IMAGE_SIZE_TO_STORE) {
-              pageProxy.cleanupAfterRender = true;
+            switch (type) {
+              case 'JpegStream':
+                var imageData = data[3];
+                loadJpegStream(id, imageData, pageProxy.objs);
+                break;
+              case 'Image':
+                var imageData = data[3];
+                pageProxy.objs.resolve(id, imageData);
+
+                // heuristics that will allow not to store large data
+                var MAX_IMAGE_SIZE_TO_STORE = 8000000;
+                if ('data' in imageData &&
+                    imageData.data.length > MAX_IMAGE_SIZE_TO_STORE) {
+                  pageProxy.cleanupAfterRender = true;
+                }
+                break;
+
+              case 'remoteImage':
+                // JFD TODO: write me!
+                loadRemoteImage(id, data[3], pageProxy.objs);
+                break;
+
+              default:
+                error('Got unknown object type ' + type);
             }
-            break;
-          default:
-            error('Got unknown object type ' + type);
+        };
+
+        if (PDFJS.objectsCache) {
+            PDFJS.objectsCache.setObject(data, pageProxy, function(url) {
+                if (url && url.length) {
+                    data[2] = "remoteImage";
+                    data[3] = url;
+                }
+                _processImage(data);
+            });
+        } else {
+            _processImage(data);
         }
       }, this);
+
+
+      messageHandler.on('GetObjUrl', function transportObjectUrl(data, responsePromise) {
+          if (PDFJS.objectsCache) {
+              var pageIndex = data[1];
+              var pageProxy = this.pageCache[pageIndex];
+
+              PDFJS.objectsCache.objectUrl(data, pageProxy, function(url) {
+                  responsePromise.resolve(url);
+              });
+          } else {
+              responsePromise.resolve(null);
+          }
+     }, this);
 
       messageHandler.on('DocProgress', function transportDocProgress(data) {
         // TODO(mack): The progress event should be resolved on a different
@@ -740,7 +775,8 @@ var WorkerTransport = (function WorkerTransportClosure() {
       source.chunkedViewerLoading = !!this.pdfDataRangeTransport;
       this.messageHandler.send('GetDocRequest', {
         source: source,
-        disableRange: PDFJS.disableRange
+        disableRange: PDFJS.disableRange,
+        useExternalDiskCache: PDFJS.useExternalDiskCache
       });
     },
 

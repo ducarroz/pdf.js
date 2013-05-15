@@ -471,6 +471,25 @@ function loadJpegStream(id, imageData, objs) {
   img.onload = (function loadJpegStream_onloadClosure() {
     objs.resolve(id, img);
   });
-  img.src = 'data:image/jpeg;base64,' + window.btoa(imageData);
+//  img.src = 'data:image/jpeg;base64,' + window.btoa(imageData);
+    var length = imageData.length,
+         bytes = new Uint8Array(length);
+
+    for (var i = 0; i < length; i ++) {
+        bytes[i] = imageData.charCodeAt(i);
+    }
+
+   var blob = new Blob([bytes], { "type" : "image/jpeg" });
+   img.src = URL.createObjectURL(blob);
 }
 
+function loadRemoteImage(id, url, objs) {
+    console.log("LOAD REMOTE IMAGE:", url);
+    var img = new Image();
+
+    img.onload = (function loadJpegStream_onloadClosure() {
+        objs.resolve(id, img);
+    });
+
+    img.src = url;
+}
