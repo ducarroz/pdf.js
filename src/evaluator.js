@@ -530,10 +530,11 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var promise = new Promise();
 
       var fontRes = resources.get('Font');
+      if (!fontRes) {
+        warn('fontRes not available');
+      }
 
-      assert(fontRes, 'fontRes not available');
-
-      font = xref.fetchIfRef(font) || fontRes.get(fontName);
+      font = xref.fetchIfRef(font) || (fontRes && fontRes.get(fontName));
       if (!isDict(font)) {
         ++this.idCounters.font;
         promise.resolve({
@@ -546,62 +547,63 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         return promise;
       }
 
-      var loadedName = font.loadedName;
-      if (!loadedName) {
-        // keep track of each font we translated so the caller can
-        // load them asynchronously before calling display on a page
-        loadedName = 'g_font_' + this.uniquePrefix + (this.idCounters.font + 1);
-        font.loadedName = loadedName;
+      if (font.loaded) {
+        promise.resolve({
+          font: font,
+          dependencies: {}
+        });
+        return promise;
+      }
 
+      // keep track of each font we translated so the caller can
+      // load them asynchronously before calling display on a page
+      font.loadedName = 'g_font_' + this.uniquePrefix +
+                        (this.idCounters.font + 1);
+
+      if (!font.translated) {
         var translated;
         try {
           translated = this.translateFont(font, xref);
         } catch (e) {
           if (e instanceof MissingDataException) {
-            font.loadedName = null;
             throw e;
           }
           translated = new ErrorFont(e instanceof Error ? e.message : e);
         }
         font.translated = translated;
+      }
 
-        if (translated.loadCharProcs) {
-          delete translated.loadCharProcs;
-
-          var charProcs = font.get('CharProcs').getAll();
-          var fontResources = font.get('Resources') || resources;
-          var opListPromises = [];
-          var charProcKeys = Object.keys(charProcs);
+      if (font.translated.loadCharProcs) {
+        var charProcs = font.get('CharProcs').getAll();
+        var fontResources = font.get('Resources') || resources;
+        var opListPromises = [];
+        var charProcKeys = Object.keys(charProcs);
+        for (var i = 0, n = charProcKeys.length; i < n; ++i) {
+          var key = charProcKeys[i];
+          var glyphStream = charProcs[key];
+          opListPromises.push(
+            this.getOperatorList(glyphStream, fontResources));
+        }
+        Promise.all(opListPromises).then(function(datas) {
+          var charProcOperatorList = {};
+          var dependencies = {};
           for (var i = 0, n = charProcKeys.length; i < n; ++i) {
             var key = charProcKeys[i];
-            var glyphStream = charProcs[key];
-            opListPromises.push(
-              this.getOperatorList(glyphStream, fontResources));
+            var data = datas[i];
+            charProcOperatorList[key] = data.queue;
+            Util.extendObj(dependencies, data.dependencies);
           }
-          Promise.all(opListPromises).then(function(datas) {
-            var charProcOperatorList = {};
-            var dependencies = {};
-            for (var i = 0, n = charProcKeys.length; i < n; ++i) {
-              var key = charProcKeys[i];
-              var data = datas[i];
-              charProcOperatorList[key] = data.queue;
-              Util.extendObj(dependencies, data.dependencies);
-            }
-            translated.charProcOperatorList = charProcOperatorList;
-            promise.resolve({
-              font: font,
-              dependencies: dependencies
-            });
-          });
-        } else {
+          font.translated.charProcOperatorList = charProcOperatorList;
+          font.loaded = true;
+          ++this.idCounters.font;
           promise.resolve({
             font: font,
-            dependencies: {}
+            dependencies: dependencies
           });
-        }
-
-        ++this.idCounters.font;
+        }.bind(this));
       } else {
+        ++this.idCounters.font;
+        font.loaded = true;
         promise.resolve({
           font: font,
           dependencies: {}
@@ -853,93 +855,6 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       return promise;
     },
 
-    getAnnotationsOperatorList:
-        function PartialEvaluator_getAnnotationsOperatorList(annotations,
-                                                             dependency) {
-      var promise = new Promise();
-
-      // 12.5.5: Algorithm: Appearance streams
-      function getTransformMatrix(rect, bbox, matrix) {
-        var bounds = Util.getAxialAlignedBoundingBox(bbox, matrix);
-        var minX = bounds[0];
-        var minY = bounds[1];
-        var maxX = bounds[2];
-        var maxY = bounds[3];
-        var width = rect[2] - rect[0];
-        var height = rect[3] - rect[1];
-        var xRatio = width / (maxX - minX);
-        var yRatio = height / (maxY - minY);
-        return [
-          xRatio,
-          0,
-          0,
-          yRatio,
-          rect[0] - minX * xRatio,
-          rect[1] - minY * yRatio
-        ];
-      }
-
-      var opListPromises = [];
-      var includedAnnotations = [];
-
-      // deal with annotations
-      for (var i = 0, length = annotations.length; i < length; ++i) {
-        var annotation = annotations[i];
-
-        // check whether we can visualize annotation
-        if (!annotation ||
-            !annotation.annotationFlags ||
-            (annotation.annotationFlags & 0x0022) || // Hidden or NoView
-            !annotation.rect ||                      // rectangle is nessessary
-            !annotation.appearance) {                // appearance is nessessary
-          continue;
-        }
-
-        includedAnnotations.push(annotation);
-
-        if (annotation.appearance) {
-          var opListPromise = this.getOperatorList(annotation.appearance,
-            annotation.resources);
-          opListPromises.push(opListPromise);
-        } else {
-          var opListPromise = new Promise();
-          opListPromise.resolve(createOperatorList());
-          opListPromises.push(opListPromise);
-        }
-      }
-
-      Promise.all(opListPromises).then(function(datas) {
-        var fnArray = [];
-        var argsArray = [];
-        var dependencies = {};
-        for (var i = 0, n = datas.length; i < n; ++i) {
-          var annotation = includedAnnotations[i];
-          var data = datas[i];
-
-          // apply rectangle
-          var rect = annotation.rect;
-          var bbox = annotation.bbox;
-          var matrix = annotation.matrix;
-          var transform = getTransformMatrix(rect, bbox, matrix);
-          var border = annotation.border;
-
-          fnArray.push('beginAnnotation');
-          argsArray.push([rect, transform, matrix, border]);
-
-          Util.concatenateToArray(fnArray, data.queue.fnArray);
-          Util.concatenateToArray(argsArray, data.queue.argsArray);
-          Util.extendObj(dependencies, data.dependencies);
-
-          fnArray.push('endAnnotation');
-          argsArray.push([]);
-        }
-
-        promise.resolve(createOperatorList(fnArray, argsArray, dependencies));
-      });
-
-      return promise;
-    },
-
     getTextContent: function PartialEvaluator_getTextContent(
                                                     stream, resources) {
 
@@ -995,7 +910,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                 case 'TJ':
                   var chunkPromise = new Promise();
                   chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(items, font) {
+                  fontPromise.then(function(items, chunkPromise, font) {
                     var chunk = '';
                     for (var j = 0, jj = items.length; j < jj; j++) {
                       if (typeof items[j] === 'string') {
@@ -1012,19 +927,18 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                         }
                       }
                     }
-
                     chunkPromise.resolve(
                         getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[0]));
+                  }.bind(null, args[0], chunkPromise));
                   break;
                 case 'Tj':
                   var chunkPromise = new Promise();
                   chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(charCodes, font) {
+                  fontPromise.then(function(charCodes, chunkPromise, font) {
                     var chunk = fontCharsToUnicode(charCodes, font);
                     chunkPromise.resolve(
                         getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[0]));
+                  }.bind(null, args[0], chunkPromise));
                   break;
                 case '\'':
                   // For search, adding a extra white space for line breaks
@@ -1032,21 +946,21 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                   // the text-selection divs.
                   var chunkPromise = new Promise();
                   chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(charCodes, font) {
+                  fontPromise.then(function(charCodes, chunkPromise, font) {
                     var chunk = fontCharsToUnicode(charCodes, font);
                     chunkPromise.resolve(
                         getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[0]));
+                  }.bind(null, args[0], chunkPromise));
                   break;
                 case '"':
                   // Note comment in "'"
                   var chunkPromise = new Promise();
                   chunkPromises.push(chunkPromise);
-                  fontPromise.then(function(charCodes, font) {
+                  fontPromise.then(function(charCodes, chunkPromise, font) {
                     var chunk = fontCharsToUnicode(charCodes, font);
                     chunkPromise.resolve(
                         getBidiText(chunk, -1, font.vertical));
-                  }.bind(null, args[2]));
+                  }.bind(null, args[2], chunkPromise));
                   break;
                 case 'Do':
                   if (args[0].code) {

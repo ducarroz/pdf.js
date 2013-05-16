@@ -226,6 +226,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     this.current = new CanvasExtraState();
     this.stateStack = [];
     this.pendingClip = null;
+    this.pendingEOFill = false;
     this.res = null;
     this.xobjs = null;
     this.commonObjs = commonObjs;
@@ -743,23 +744,43 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       consumePath = typeof consumePath !== 'undefined' ? consumePath : true;
       var ctx = this.ctx;
       var fillColor = this.current.fillColor;
+      var needRestore = false;
 
       if (fillColor && fillColor.hasOwnProperty('type') &&
           fillColor.type === 'Pattern') {
         ctx.save();
         ctx.fillStyle = fillColor.getPattern(ctx);
-        ctx.fill();
-        ctx.restore();
-      } else {
-        ctx.fill();
+        needRestore = true;
       }
-      if (consumePath)
+
+      if (this.pendingEOFill) {
+        if ('mozFillRule' in this.ctx) {
+          this.ctx.mozFillRule = 'evenodd';
+          this.ctx.fill();
+          this.ctx.mozFillRule = 'nonzero';
+        } else {
+          try {
+            this.ctx.fill('evenodd');
+          } catch (ex) {
+            // shouldn't really happen, but browsers might think differently
+            this.ctx.fill();
+          }
+        }
+        this.pendingEOFill = false;
+      } else {
+        this.ctx.fill();
+      }
+
+      if (needRestore) {
+        ctx.restore();
+      }
+      if (consumePath) {
         this.consumePath();
+      }
     },
     eoFill: function CanvasGraphics_eoFill() {
-      var savedFillRule = this.setEOFillRule();
+      this.pendingEOFill = true;
       this.fill();
-      this.restoreFillRule(savedFillRule);
     },
     fillStroke: function CanvasGraphics_fillStroke() {
       this.fill(false);
@@ -768,19 +789,17 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.consumePath();
     },
     eoFillStroke: function CanvasGraphics_eoFillStroke() {
-      var savedFillRule = this.setEOFillRule();
+      this.pendingEOFill = true;
       this.fillStroke();
-      this.restoreFillRule(savedFillRule);
     },
     closeFillStroke: function CanvasGraphics_closeFillStroke() {
       this.closePath();
       this.fillStroke();
     },
     closeEOFillStroke: function CanvasGraphics_closeEOFillStroke() {
-      var savedFillRule = this.setEOFillRule();
+      this.pendingEOFill = true;
       this.closePath();
       this.fillStroke();
-      this.restoreFillRule(savedFillRule);
     },
     endPath: function CanvasGraphics_endPath() {
       this.consumePath();
@@ -1067,6 +1086,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
             continue;
           }
 
+          var restoreNeeded = false;
           var character = glyph.fontChar;
           var vmetric = glyph.vmetric || defaultVMetrics;
           if (vertical) {
@@ -1092,6 +1112,22 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
               scaledAccentX = scaledX + accent.offset.x / fontSizeScale;
               scaledAccentY = scaledY - accent.offset.y / fontSizeScale;
             }
+
+            if (font.remeasure && width > 0) {
+              // some standard fonts may not have the exact width, trying to
+              // rescale per character
+              var measuredWidth = ctx.measureText(character).width * 1000 /
+                current.fontSize * current.fontSizeScale;
+              var characterScaleX = width / measuredWidth;
+              restoreNeeded = true;
+              ctx.save();
+              ctx.scale(characterScaleX, 1);
+              scaledX /= characterScaleX;
+              if (accent) {
+                scaledAccentX /= characterScaleX;
+              }
+            }
+
             switch (textRenderingMode) {
               default: // other unsupported rendering modes
               case TextRenderingMode.FILL:
@@ -1133,6 +1169,10 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           x += charWidth;
 
           canvasWidth += charWidth;
+
+          if (restoreNeeded) {
+            ctx.restore();
+          }
         }
         if (vertical) {
           current.y -= x * textHScale;
@@ -1513,24 +1553,12 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     },
 
     beginAnnotation: function CanvasGraphics_beginAnnotation(rect, transform,
-                                                             matrix, border) {
+                                                             matrix) {
       this.save();
 
       if (rect && isArray(rect) && 4 == rect.length) {
         var width = rect[2] - rect[0];
         var height = rect[3] - rect[1];
-
-        if (border) {
-          // TODO(mack): Support different border styles
-          this.save();
-          var rgb = border.rgb;
-          this.setStrokeRGBColor(rgb[0], rgb[1], rgb[2]);
-          this.setLineWidth(border.width);
-          this.rectangle(rect[0], rect[1], width, height);
-          this.stroke();
-          this.restore();
-        }
-
         this.rectangle(rect[0], rect[1], width, height);
         this.clip();
         this.endPath();
@@ -1750,28 +1778,25 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
     consumePath: function CanvasGraphics_consumePath() {
       if (this.pendingClip) {
-        var savedFillRule = null;
-        if (this.pendingClip == EO_CLIP)
-          savedFillRule = this.setEOFillRule();
-
-        this.ctx.clip();
-
+        if (this.pendingClip == EO_CLIP) {
+          if ('mozFillRule' in this.ctx) {
+            this.ctx.mozFillRule = 'evenodd';
+            this.ctx.clip();
+            this.ctx.mozFillRule = 'nonzero';
+          } else {
+            try {
+              this.ctx.clip('evenodd');
+            } catch (ex) {
+              // shouldn't really happen, but browsers might think differently
+              this.ctx.clip();
+            }
+          }
+        } else {
+          this.ctx.clip();
+        }
         this.pendingClip = null;
-        if (savedFillRule !== null)
-          this.restoreFillRule(savedFillRule);
       }
       this.ctx.beginPath();
-    },
-    // We generally keep the canvas context set for
-    // nonzero-winding, and just set evenodd for the operations
-    // that need them.
-    setEOFillRule: function CanvasGraphics_setEOFillRule() {
-      var savedFillRule = this.ctx.mozFillRule;
-      this.ctx.mozFillRule = 'evenodd';
-      return savedFillRule;
-    },
-    restoreFillRule: function CanvasGraphics_restoreFillRule(rule) {
-      this.ctx.mozFillRule = rule;
     },
     getSinglePixelWidth: function CanvasGraphics_getSinglePixelWidth(scale) {
       var inverse = this.ctx.mozCurrentTransformInverse;

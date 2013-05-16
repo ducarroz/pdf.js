@@ -139,6 +139,11 @@ function shadow(obj, prop, value) {
   return value;
 }
 
+var PasswordResponses = PDFJS.PasswordResponses = {
+  NEED_PASSWORD: 1,
+  INCORRECT_PASSWORD: 2
+};
+
 var PasswordException = (function PasswordExceptionClosure() {
   function PasswordException(msg, code) {
     this.name = 'PasswordException';
@@ -424,11 +429,30 @@ var Util = PDFJS.Util = (function UtilClosure() {
     }
   };
 
+  Util.getInheritableProperty = function Util_getInheritableProperty(dict,
+                                                                     name) {
+    while (dict && !dict.has(name)) {
+      dict = dict.get('Parent');
+    }
+    if (!dict) {
+      return null;
+    }
+    return dict.get(name);
+  };
+
+  Util.inherit = function Util_inherit(sub, base, prototype) {
+    sub.prototype = Object.create(base.prototype);
+    sub.prototype.constructor = sub;
+    for (var prop in prototype) {
+      sub.prototype[prop] = prototype[prop];
+    }
+  };
+
   return Util;
 })();
 
 var PageViewport = PDFJS.PageViewport = (function PageViewportClosure() {
-  function PageViewport(viewBox, scale, rotation, offsetX, offsetY) {
+  function PageViewport(viewBox, scale, rotation, offsetX, offsetY, dontFlip) {
     this.viewBox = viewBox;
     this.scale = scale;
     this.rotation = rotation;
@@ -440,25 +464,28 @@ var PageViewport = PDFJS.PageViewport = (function PageViewportClosure() {
     var centerX = (viewBox[2] + viewBox[0]) / 2;
     var centerY = (viewBox[3] + viewBox[1]) / 2;
     var rotateA, rotateB, rotateC, rotateD;
-    switch (rotation % 360) {
-      case -180:
+    rotation = rotation % 360;
+    rotation = rotation < 0 ? rotation + 360 : rotation;
+    switch (rotation) {
       case 180:
         rotateA = -1; rotateB = 0; rotateC = 0; rotateD = 1;
         break;
-      case -270:
       case 90:
         rotateA = 0; rotateB = 1; rotateC = 1; rotateD = 0;
         break;
-      case -90:
       case 270:
         rotateA = 0; rotateB = -1; rotateC = -1; rotateD = 0;
         break;
-      //case 360:
       //case 0:
       default:
         rotateA = 1; rotateB = 0; rotateC = 0; rotateD = -1;
         break;
     }
+
+    if (dontFlip) {
+      rotateC = -rotateC; rotateD = -rotateD;
+    }
+
     var offsetCanvasX, offsetCanvasY;
     var width, height;
     if (rotateA === 0) {
@@ -494,7 +521,7 @@ var PageViewport = PDFJS.PageViewport = (function PageViewportClosure() {
       var scale = 'scale' in args ? args.scale : this.scale;
       var rotation = 'rotation' in args ? args.rotation : this.rotation;
       return new PageViewport(this.viewBox.slice(), scale, rotation,
-                              this.offsetX, this.offsetY);
+                              this.offsetX, this.offsetY, args.dontFlip);
     },
     convertToViewportPoint: function PageViewport_convertToViewportPoint(x, y) {
       return Util.applyTransform([x, y], this.transform);
@@ -672,16 +699,26 @@ var Promise = PDFJS.Promise = (function PromiseClosure() {
       deferred.resolve(results);
       return deferred;
     }
+    function reject(reason) {
+      if (deferred.isRejected) {
+        return;
+      }
+      results = [];
+      deferred.reject(reason);
+    }
     for (var i = 0, ii = promises.length; i < ii; ++i) {
       var promise = promises[i];
       promise.then((function(i) {
         return function(value) {
+          if (deferred.isRejected) {
+            return;
+          }
           results[i] = value;
           unresolved--;
           if (unresolved === 0)
             deferred.resolve(results);
         };
-      })(i));
+      })(i), reject);
     }
     return deferred;
   };
@@ -762,12 +799,8 @@ var Promise = PDFJS.Promise = (function PromiseClosure() {
     },
 
     then: function Promise_then(callback, errback, progressback) {
-      if (!callback) {
-        error('Requiring callback' + this.name);
-      }
-
       // If the promise is already resolved, call the callback directly.
-      if (this.isResolved) {
+      if (this.isResolved && callback) {
         var data = this.data;
         callback.call(null, data);
       } else if (this.isRejected && errback) {
@@ -775,9 +808,12 @@ var Promise = PDFJS.Promise = (function PromiseClosure() {
         var exception = this.exception;
         errback.call(null, error, exception);
       } else {
-        this.callbacks.push(callback);
-        if (errback)
+        if (callback) {
+          this.callbacks.push(callback);
+        }
+        if (errback) {
           this.errbacks.push(errback);
+        }
       }
 
       if (progressback)

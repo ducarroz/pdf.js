@@ -23,6 +23,14 @@
        "rounds": 1,
        "type": "text"
     },
+    {  "id": "issue2881",
+       "file": "pdfs/issue2881.pdf",
+       "md5": "ea6ade27d2cb146676d23dcd6605d5ee",
+       "link": "true",
+       "rounds": 1,
+       "lastPage": 1,
+       "type": "eq"
+    },
     {  "id": "issue2391-1",
       "file": "pdfs/issue2391-1.pdf",
       "md5": "25ae9cb959612e7b343b55da63af2716",
@@ -466,6 +474,13 @@
        "md5": "d582cc0f2592ae82936589ced2a47e55",
        "rounds": 1,
        "type": "eq"
+    },
+    {  "id": "issue3188",
+      "file": "pdfs/issue3188.pdf",
+      "md5": "161b72604d86f40ab2f765ddd3b61227",
+      "rounds": 1,
+      "lastPage": 1,
+      "type": "eq"
     },
     {  "id": "issue1586",
       "file": "pdfs/pdfjsbad1586.pdf",
@@ -1011,6 +1026,13 @@
       "md5": "05d3803b6c22451e18cb60d8d8c75c0c",
       "rounds": 1,
       "type": "eq"
+    },
+    {  "id": "bug816075",
+      "file": "pdfs/bug816075.pdf",
+      "md5": "7ec87c115c1f9ec41234cc7002555e82",
+      "rounds": 1,
+      "type": "eq",
+      "about": "A CIDFontType0 font with a CFF font that isn't actually CID."
     },
     {  "id": "noembed-identity-2",
       "file": "pdfs/noembed-identity-2.pdf",
