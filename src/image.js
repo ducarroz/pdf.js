@@ -84,7 +84,14 @@ var PDFImage = (function PDFImageClosure() {
     this.bpc = bitsPerComponent;
 
     if (!this.imageMask) {
-      var colorSpace = dict.get('ColorSpace', 'CS');
+      var colorSpace;
+
+      try {
+        colorSpace = dict.get('ColorSpace', 'CS');
+      } catch (execption) {
+          console.log("Error, Cannot get the color space!");
+      };
+
       if (!colorSpace) {
         TODO('JPX images (which don"t require color spaces');
         colorSpace = new Name('DeviceRGB');
