@@ -743,7 +743,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                 args = [self.handleSetFont(resources, args)];
               } else if (cmd == 'EI') {
                 var data = self.buildPaintImageXObject(
-                    resources, args[0], true, raw);
+                    resources, args[0], true, xobjs.getRaw(args[0].name));
                 Util.extendObj(dependencies, data.dependencies);
                 self.insertDependencies(queue, data.dependencies);
                 fn = data.fn;
