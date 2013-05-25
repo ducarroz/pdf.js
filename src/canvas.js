@@ -32,11 +32,14 @@ var TextRenderingMode = {
   STROKE_ADD_TO_PATH: 5,
   FILL_STROKE_ADD_TO_PATH: 6,
   ADD_TO_PATH: 7,
+  FILL_STROKE_MASK: 3,
   ADD_TO_PATH_FLAG: 4
 };
 
 // Minimal font size that would be used during canvas fillText operations.
 var MIN_FONT_SIZE = 16;
+
+var COMPILE_TYPE3_GLYPHS = true;
 
 function createScratchCanvas(width, height) {
   var canvas = document.createElement('canvas');
@@ -164,6 +167,157 @@ function addContextCurrentTransform(ctx) {
   }
 }
 
+function compileType3Glyph(imgData) {
+  var POINT_TO_PROCESS_LIMIT = 1000;
+
+  var width = imgData.width, height = imgData.height;
+  var i, j;
+  // we need sparse arrays
+  var points = [];
+  for (i = 0; i <= height; i++) {
+    points.push([]);
+  }
+
+  // finding iteresting points: every point is located between mask pixels,
+  // so there will be points of the (width + 1)x(height + 1) grid. Every point
+  // will have flags assigned based on neighboring mask pixels:
+  //   4 | 8
+  //   --P--
+  //   2 | 1
+  // We are interested only in points with the flags:
+  //   - outside corners: 1, 2, 4, 8;
+  //   - inside corners: 7, 11, 13, 14;
+  //   - and, intersections: 5, 10.
+  var pos = 3, data = imgData.data, lineSize = width * 4, count = 0;
+  if (data[3] !== 0) {
+    points[0][0] = 1;
+    ++count;
+  }
+  for (j = 1; j < width; j++) {
+    if (data[pos] !== data[pos + 4]) {
+      points[0][j] = data[pos] ? 2 : 1;
+      ++count;
+    }
+    pos += 4;
+  }
+  if (data[pos] !== 0) {
+    points[0][j] = 2;
+    ++count;
+  }
+  pos += 4;
+  for (i = 1; i < height; i++) {
+    if (data[pos - lineSize] !== data[pos]) {
+      points[i][0] = data[pos] ? 1 : 8;
+      ++count;
+    }
+    for (j = 1; j < width; j++) {
+      var f1 = data[pos + 4] ? 1 : 0;
+      var f2 = data[pos] ? 1 : 0;
+      var f4 = data[pos - lineSize] ? 1 : 0;
+      var f8 = data[pos - lineSize + 4] ? 1 : 0;
+      var fSum = f1 + f2 + f4 + f8;
+      if (fSum === 1 || fSum === 3 || (fSum === 2 && f1 === f4)) {
+        points[i][j] = f1 | (f2 << 1) | (f4 << 2) | (f8 << 3);
+        ++count;
+      }
+      pos += 4;
+    }
+    if (data[pos - lineSize] !== data[pos]) {
+      points[i][j] = data[pos] ? 2 : 4;
+      ++count;
+    }
+    pos += 4;
+
+    if (count > POINT_TO_PROCESS_LIMIT) {
+      return null;
+    }
+  }
+  pos -= lineSize;
+  if (data[pos] !== 0) {
+    points[i][0] = 8;
+    ++count;
+  }
+  for (j = 1; j < width; j++) {
+    if (data[pos] !== data[pos + 4]) {
+      points[i][j] = data[pos] ? 4 : 8;
+      ++count;
+    }
+    pos += 4;
+  }
+  if (data[pos] !== 0) {
+    points[i][j] = 4;
+    ++count;
+  }
+  if (count > POINT_TO_PROCESS_LIMIT) {
+    return null;
+  }
+
+  // building outlines
+  var outline = [];
+  outline.push('c.save();');
+  // the path shall be painted in [0..1]x[0..1] space
+  outline.push('c.scale(' + (1 / width) + ',' +  (-1 / height) + ');');
+  outline.push('c.translate(0,-' + height + ');');
+  outline.push('c.beginPath();');
+  for (i = 0; i <= height; i++) {
+    if (points[i].length === 0) {
+      continue;
+    }
+    var js = null;
+    for (js in points[i]) {
+      break;
+    }
+    if (js === null) {
+      continue;
+    }
+    var i0 = i, j0 = (j = +js);
+
+    outline.push('c.moveTo(' + j + ',' + i + ');');
+    var type = points[i][j], d = 0;
+    do {
+      if (type === 5 || type === 10) {
+        // line crossed: following dirrection we followed
+        points[i0][j0] = type | (15 ^ d); // changing direction for "future hit"
+        type |= d;
+      }
+
+      switch (type) {
+      case 1:
+      case 13:
+        do { i0++; } while (!points[i0][j0]);
+        d = 9;
+        break;
+      case 4:
+      case 7:
+        do { i0--; } while (!points[i0][j0]);
+        d = 6;
+        break;
+      case 8:
+      case 14:
+        do { j0++; } while (!points[i0][j0]);
+        d = 12;
+        break;
+      case 2:
+      case 11:
+        do { j0--; } while (!points[i0][j0]);
+        d = 3;
+        break;
+      }
+      outline.push('c.lineTo(' + j0 + ',' + i0 + ');');
+
+      type = points[i0][j0];
+      delete points[i0][j0];
+    } while (j0 !== j || i0 !== i);
+    --i;
+  }
+  outline.push('c.fill();');
+  outline.push('c.beginPath();');
+  outline.push('c.restore();');
+
+  /*jshint -W054 */
+  return new Function('c', outline.join('\n'));
+}
+
 var CanvasExtraState = (function CanvasExtraStateClosure() {
   function CanvasExtraState(old) {
     // Are soft masks and alpha values shapes or opacities?
@@ -235,6 +389,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     this.imageLayer = imageLayer;
     this.preProcessor = preProcessor;
     this.groupStack = [];
+    this.processingType3 = null;
     if (canvasCtx) {
       addContextCurrentTransform(canvasCtx);
     }
@@ -669,10 +824,6 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.current = old.clone();
     },
     restore: function CanvasGraphics_restore() {
-      if ('textClipLayers' in this) {
-        this.completeTextClipping();
-      }
-
       var prev = this.stateStack.pop();
       if (prev) {
         this.current = prev;
@@ -820,64 +971,25 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.current.y = this.current.lineY = 0;
     },
     endText: function CanvasGraphics_endText() {
-      if ('textClipLayers' in this) {
-        this.swapImageForTextClipping();
+      if (!('pendingTextPaths' in this)) {
+        this.ctx.beginPath();
+        return;
       }
-    },
-    getCurrentTextClipping: function CanvasGraphics_getCurrentTextClipping() {
+      var paths = this.pendingTextPaths;
       var ctx = this.ctx;
-      var transform = ctx.mozCurrentTransform;
-      if ('textClipLayers' in this) {
-        // we need to reset only font and transform
-        var maskCtx = this.textClipLayers.maskCtx;
-        maskCtx.setTransform.apply(maskCtx, transform);
-        maskCtx.font = ctx.font;
-        return maskCtx;
+
+      ctx.save();
+      ctx.beginPath();
+      for (var i = 0; i < paths.length; i++) {
+        var path = paths[i];
+        ctx.setTransform.apply(ctx, path.transform);
+        ctx.translate(path.x, path.y);
+        path.addToPath(ctx, path.fontSize);
       }
-
-      var canvasWidth = ctx.canvas.width;
-      var canvasHeight = ctx.canvas.height;
-      // keeping track of the text clipping of the separate canvas
-      var maskCanvas = createScratchCanvas(canvasWidth, canvasHeight);
-      var maskCtx = maskCanvas.getContext('2d');
-      maskCtx.setTransform.apply(maskCtx, transform);
-      maskCtx.font = ctx.font;
-      var textClipLayers = {
-        maskCanvas: maskCanvas,
-        maskCtx: maskCtx
-      };
-      this.textClipLayers = textClipLayers;
-      return maskCtx;
-    },
-    swapImageForTextClipping:
-      function CanvasGraphics_swapImageForTextClipping() {
-      var ctx = this.ctx;
-      var canvasWidth = ctx.canvas.width;
-      var canvasHeight = ctx.canvas.height;
-      // saving current image content and clearing whole canvas
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      var data = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-      this.textClipLayers.imageData = data;
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
       ctx.restore();
-    },
-    completeTextClipping: function CanvasGraphics_completeTextClipping() {
-      var ctx = this.ctx;
-      // applying mask to the image (result is saved in maskCanvas)
-      var maskCtx = this.textClipLayers.maskCtx;
-      maskCtx.setTransform(1, 0, 0, 1, 0, 0);
-      maskCtx.globalCompositeOperation = 'source-in';
-      maskCtx.drawImage(ctx.canvas, 0, 0);
-
-      // restoring image data and applying the result of masked drawing
-      ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.putImageData(this.textClipLayers.imageData, 0, 0);
-      ctx.drawImage(this.textClipLayers.maskCanvas, 0, 0);
-      ctx.restore();
-
-      delete this.textClipLayers;
+      ctx.clip();
+      ctx.beginPath();
+      delete this.pendingTextPaths;
     },
     setCharSpacing: function CanvasGraphics_setCharSpacing(spacing) {
       this.current.charSpacing = spacing;
@@ -995,6 +1107,59 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       return geometry;
     },
 
+    paintChar: function (character, x, y) {
+      var ctx = this.ctx;
+      var current = this.current;
+      var font = current.font;
+      var fontSize = current.fontSize / current.fontSizeScale;
+      var textRenderingMode = current.textRenderingMode;
+      var fillStrokeMode = textRenderingMode &
+        TextRenderingMode.FILL_STROKE_MASK;
+      var isAddToPathSet = !!(textRenderingMode &
+        TextRenderingMode.ADD_TO_PATH_FLAG);
+
+      var addToPath;
+      if (font.disableFontFace || isAddToPathSet) {
+        addToPath = font.renderer.getPathGenerator(character);
+      }
+
+      if (font.disableFontFace) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.beginPath();
+        addToPath(ctx, fontSize);
+        if (fillStrokeMode === TextRenderingMode.FILL ||
+            fillStrokeMode === TextRenderingMode.FILL_STROKE) {
+          ctx.fill();
+        }
+        if (fillStrokeMode === TextRenderingMode.STROKE ||
+            fillStrokeMode === TextRenderingMode.FILL_STROKE) {
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else {
+        if (fillStrokeMode === TextRenderingMode.FILL ||
+            fillStrokeMode === TextRenderingMode.FILL_STROKE) {
+          ctx.fillText(character, x, y);
+        }
+        if (fillStrokeMode === TextRenderingMode.STROKE ||
+            fillStrokeMode === TextRenderingMode.FILL_STROKE) {
+          ctx.strokeText(character, x, y);
+        }
+      }
+
+      if (isAddToPathSet) {
+        var paths = this.pendingTextPaths || (this.pendingTextPaths = []);
+        paths.push({
+          transform: ctx.mozCurrentTransform,
+          x: x,
+          y: y,
+          fontSize: fontSize,
+          addToPath: addToPath
+        });
+      }
+    },
+
     showText: function CanvasGraphics_showText(str, skipTextSelection) {
       var ctx = this.ctx;
       var current = this.current;
@@ -1010,7 +1175,6 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var textLayer = this.textLayer;
       var geom;
       var textSelection = textLayer && !skipTextSelection ? true : false;
-      var textRenderingMode = current.textRenderingMode;
       var canvasWidth = 0.0;
       var vertical = font.vertical;
       var defaultVMetrics = font.defaultVMetrics;
@@ -1039,6 +1203,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
             continue;
           }
 
+          this.processingType3 = glyph;
           this.save();
           ctx.scale(fontSize, fontSize);
           ctx.transform.apply(ctx, fontMatrix);
@@ -1055,6 +1220,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           canvasWidth += width;
         }
         ctx.restore();
+        this.processingType3 = null;
       } else {
         ctx.save();
         this.applyTextTransforms();
@@ -1108,10 +1274,6 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
               scaledX = x / fontSizeScale;
               scaledY = 0;
             }
-            if (accent) {
-              scaledAccentX = scaledX + accent.offset.x / fontSizeScale;
-              scaledAccentY = scaledY - accent.offset.y / fontSizeScale;
-            }
 
             if (font.remeasure && width > 0) {
               // some standard fonts may not have the exact width, trying to
@@ -1128,41 +1290,11 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
               }
             }
 
-            switch (textRenderingMode) {
-              default: // other unsupported rendering modes
-              case TextRenderingMode.FILL:
-              case TextRenderingMode.FILL_ADD_TO_PATH:
-                ctx.fillText(character, scaledX, scaledY);
-                if (accent) {
-                  ctx.fillText(accent.fontChar, scaledAccentX, scaledAccentY);
-                }
-                break;
-              case TextRenderingMode.STROKE:
-              case TextRenderingMode.STROKE_ADD_TO_PATH:
-                ctx.strokeText(character, scaledX, scaledY);
-                if (accent) {
-                  ctx.strokeText(accent.fontChar, scaledAccentX, scaledAccentY);
-                }
-                break;
-              case TextRenderingMode.FILL_STROKE:
-              case TextRenderingMode.FILL_STROKE_ADD_TO_PATH:
-                ctx.fillText(character, scaledX, scaledY);
-                ctx.strokeText(character, scaledX, scaledY);
-                if (accent) {
-                  ctx.fillText(accent.fontChar, scaledAccentX, scaledAccentY);
-                  ctx.strokeText(accent.fontChar, scaledAccentX, scaledAccentY);
-                }
-                break;
-              case TextRenderingMode.INVISIBLE:
-              case TextRenderingMode.ADD_TO_PATH:
-                break;
-            }
-            if (textRenderingMode & TextRenderingMode.ADD_TO_PATH_FLAG) {
-              var clipCtx = this.getCurrentTextClipping();
-              clipCtx.fillText(character, scaledX, scaledY);
-              if (accent) {
-                clipCtx.fillText(accent.fontChar, scaledAccentX, scaledAccentY);
-              }
+            this.paintChar(character, scaledX, scaledY);
+            if (accent) {
+              scaledAccentX = scaledX + accent.offset.x / fontSizeScale;
+              scaledAccentY = scaledY - accent.offset.y / fontSizeScale;
+              this.paintChar(accent.fontChar, scaledAccentX, scaledAccentY);
             }
           }
 
@@ -1604,6 +1736,29 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     paintImageMaskXObject: function CanvasGraphics_paintImageMaskXObject(
                              imgArray, inverseDecode, width, height) {
       var ctx = this.ctx;
+      var glyph = this.processingType3;
+
+      if (COMPILE_TYPE3_GLYPHS && glyph && !('compiled' in glyph)) {
+        var MAX_SIZE_TO_COMPILE = 1000;
+        if (width <= MAX_SIZE_TO_COMPILE && height <= MAX_SIZE_TO_COMPILE) {
+          var pixels = new Uint8Array(width * height * 4);
+          for (var i = 3, ii = pixels.length; i < ii; i += 4) {
+            pixels[i] = 255;
+          }
+          applyStencilMask(imgArray, width, height, inverseDecode, pixels);
+          glyph.compiled =
+            compileType3Glyph({data: pixels, width: width, height: height});
+        } else {
+          glyph.compiled = null;
+        }
+      }
+
+      if (glyph && glyph.compiled) {
+        glyph.compiled(ctx);
+        return;
+      }
+
+
       var tmpCanvas = createScratchCanvas(width, height);
       var tmpCtx = tmpCanvas.getContext('2d');
 
