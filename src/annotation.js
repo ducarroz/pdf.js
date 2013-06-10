@@ -16,7 +16,7 @@
  */
 /* globals Util, isDict, isName, stringToPDFString, TODO, Dict, Stream,
            stringToBytes, PDFJS, isWorker, assert, NotImplementedException,
-           Promise */
+           Promise, isArray, ObjectLoader */
 
 'use strict';
 
@@ -80,14 +80,23 @@ var Annotation = (function AnnotationClosure() {
     data.rect = Util.normalizeRect(rect);
     data.annotationFlags = dict.get('F');
 
-    var border = dict.get('BS');
-    if (isDict(border)) {
-      var borderWidth = border.has('W') ? border.get('W') : 1;
-      data.border = {
-        width: borderWidth,
-        type: border.get('S') || 'S',
-        rgb: dict.get('C') || [0, 0, 1]
-      };
+    var color = dict.get('C');
+    if (isArray(color) && color.length === 3) {
+      // TODO(mack): currently only supporting rgb; need support different
+      // colorspaces
+      data.color = color;
+    } else {
+      data.color = [0, 0, 0];
+    }
+
+    // Some types of annotations have border style dict which has more
+    // info than the border array
+    if (dict.has('BS')) {
+      var borderStyle = dict.get('BS');
+      data.borderWidth = borderStyle.has('W') ? borderStyle.get('W') : 1;
+    } else {
+      var borderArray = dict.get('Border') || [0, 0, 1];
+      data.borderWidth = borderArray[2];
     }
 
     this.appearance = getDefaultAppearance(dict);
@@ -108,7 +117,8 @@ var Annotation = (function AnnotationClosure() {
         'getHtmlElement() should be implemented in subclass');
     },
 
-    getEmptyContainer: function Annotaiton_getEmptyContainer(tagName, rect) {
+    // TODO(mack): Remove this, it's not really that helpful.
+    getEmptyContainer: function Annotation_getEmptyContainer(tagName, rect) {
       assert(!isWorker,
         'getEmptyContainer() should be called from main thread');
 
@@ -129,7 +139,21 @@ var Annotation = (function AnnotationClosure() {
       );
     },
 
-    getOperatorList: function Annotation_appendToOperatorList(evaluator) {
+    loadResources: function(keys) {
+      var promise = new Promise();
+      this.appearance.dict.getAsync('Resources').then(function(resources) {
+        var objectLoader = new ObjectLoader(resources.map,
+                                            keys,
+                                            resources.xref);
+        objectLoader.load().then(function() {
+          promise.resolve(resources);
+        });
+      }.bind(this));
+
+      return promise;
+    },
+
+    getOperatorList: function Annotation_getToOperatorList(evaluator) {
 
       var promise = new Promise();
 
@@ -147,26 +171,37 @@ var Annotation = (function AnnotationClosure() {
       var data = this.data;
 
       var appearanceDict = this.appearance.dict;
-      var resources = appearanceDict.get('Resources');
+      var resourcesPromise = this.loadResources([
+        'ExtGState',
+        'ColorSpace',
+        'Pattern',
+        'Shading',
+        'XObject',
+        'Font'
+        // ProcSet
+        // Properties
+      ]);
       var bbox = appearanceDict.get('BBox') || [0, 0, 1, 1];
       var matrix = appearanceDict.get('Matrix') || [1, 0, 0, 1, 0 ,0];
       var transform = getTransformMatrix(data.rect, bbox, matrix);
 
       var border = data.border;
 
-      var listPromise = evaluator.getOperatorList(this.appearance, resources);
-      listPromise.then(function(appearanceStreamData) {
-        var fnArray = appearanceStreamData.queue.fnArray;
-        var argsArray = appearanceStreamData.queue.argsArray;
+      resourcesPromise.then(function(resources) {
+        var listPromise = evaluator.getOperatorList(this.appearance, resources);
+        listPromise.then(function(appearanceStreamData) {
+          var fnArray = appearanceStreamData.queue.fnArray;
+          var argsArray = appearanceStreamData.queue.argsArray;
 
-        fnArray.unshift('beginAnnotation');
-        argsArray.unshift([data.rect, transform, matrix]);
+          fnArray.unshift('beginAnnotation');
+          argsArray.unshift([data.rect, transform, matrix]);
 
-        fnArray.push('endAnnotation');
-        argsArray.push([]);
+          fnArray.push('endAnnotation');
+          argsArray.push([]);
 
-        promise.resolve(appearanceStreamData);
-      });
+          promise.resolve(appearanceStreamData);
+        });
+      }.bind(this));
 
       return promise;
     }
@@ -189,7 +224,11 @@ var Annotation = (function AnnotationClosure() {
         return;
       }
 
-      return WidgetAnnotation;
+      if (fieldType === 'Tx') {
+        return TextWidgetAnnotation;
+      } else {
+        return WidgetAnnotation;
+      }
     } else {
       return Annotation;
     }
@@ -238,6 +277,41 @@ var Annotation = (function AnnotationClosure() {
     } else {
       TODO('unimplemented annotation type: ' + subtype);
     }
+  };
+
+  Annotation.appendToOperatorList = function Annotation_appendToOperatorList(
+      annotations, pageQueue, pdfManager, dependencies, partialEvaluator) {
+
+    function reject(e) {
+      annotationsReadyPromise.reject(e);
+    }
+
+    var annotationsReadyPromise = new Promise();
+
+    var annotationPromises = [];
+    for (var i = 0, n = annotations.length; i < n; ++i) {
+      annotationPromises.push(annotations[i].getOperatorList(partialEvaluator));
+    }
+
+    Promise.all(annotationPromises).then(function(datas) {
+      var fnArray = pageQueue.fnArray;
+      var argsArray = pageQueue.argsArray;
+      fnArray.push('beginAnnotations');
+      argsArray.push([]);
+      for (var i = 0, n = datas.length; i < n; ++i) {
+        var annotationData = datas[i];
+        var annotationQueue = annotationData.queue;
+        Util.concatenateToArray(fnArray, annotationQueue.fnArray);
+        Util.concatenateToArray(argsArray, annotationQueue.argsArray);
+        Util.extendObj(dependencies, annotationData.dependencies);
+      }
+      fnArray.push('endAnnotations');
+      argsArray.push([]);
+
+      annotationsReadyPromise.resolve();
+    }, reject);
+
+    return annotationsReadyPromise;
   };
 
   return Annotation;
@@ -311,6 +385,148 @@ var WidgetAnnotation = (function WidgetAnnotationClosure() {
   });
 
   return WidgetAnnotation;
+})();
+
+var TextWidgetAnnotation = (function TextWidgetAnnotationClosure() {
+  function TextWidgetAnnotation(params) {
+    WidgetAnnotation.call(this, params);
+
+    if (params.data) {
+      return;
+    }
+
+    this.data.textAlignment = Util.getInheritableProperty(params.dict, 'Q');
+  }
+
+  // TODO(mack): This dupes some of the logic in CanvasGraphics.setFont()
+  function setTextStyles(element, item, fontObj) {
+
+    var style = element.style;
+    style.fontSize = item.fontSize + 'px';
+    style.direction = item.fontDirection < 0 ? 'rtl': 'ltr';
+
+    if (!fontObj) {
+      return;
+    }
+
+    style.fontWeight = fontObj.black ?
+                            (fontObj.bold ? 'bolder' : 'bold') :
+                            (fontObj.bold ? 'bold' : 'normal');
+    style.fontStyle = fontObj.italic ? 'italic' : 'normal';
+
+    var fontName = fontObj.loadedName;
+    var fontFamily = fontName ? '"' + fontName + '", ' : '';
+    // Use a reasonable default font if the font doesn't specify a fallback
+    var fallbackName = fontObj.fallbackName || 'Helvetica, sans-serif';
+    style.fontFamily = fontFamily + fallbackName;
+  }
+
+
+  var parent = WidgetAnnotation.prototype;
+  Util.inherit(TextWidgetAnnotation, WidgetAnnotation, {
+    hasHtml: function TextWidgetAnnotation_hasHtml() {
+      return !!this.data.fieldValue;
+    },
+
+    getHtmlElement: function TextWidgetAnnotation_getHtmlElement(commonObjs) {
+      assert(!isWorker, 'getHtmlElement() shall be called from main thread');
+
+      var item = this.data;
+
+      var element = this.getEmptyContainer('div');
+      element.style.display = 'table';
+
+      var content = document.createElement('div');
+      content.textContent = item.fieldValue;
+      var textAlignment = item.textAlignment;
+      content.style.textAlign = ['left', 'center', 'right'][textAlignment];
+      content.style.verticalAlign = 'middle';
+      content.style.display = 'table-cell';
+
+      var fontObj = item.fontRefName ?
+                    commonObjs.getData(item.fontRefName) : null;
+      var cssRules = setTextStyles(content, item, fontObj);
+
+      element.appendChild(content);
+
+      return element;
+    },
+
+    getOperatorList: function TextWidgetAnnotation_getOperatorList(evaluator) {
+
+
+      var promise = new Promise();
+      var data = this.data;
+
+      // Even if there is an appearance stream, ignore it. This is the
+      // behaviour used by Adobe Reader.
+
+      var defaultAppearance = data.defaultAppearance;
+      if (!defaultAppearance) {
+        promise.resolve({
+          queue: {
+            fnArray: [],
+            argsArray: []
+          },
+          dependency: {}
+        });
+        return promise;
+      }
+
+      // Include any font resources found in the default appearance
+
+      var stream = new Stream(stringToBytes(defaultAppearance));
+      var listPromise = evaluator.getOperatorList(stream, this.fieldResources);
+      listPromise.then(function(appearanceStreamData) {
+        var appearanceFnArray = appearanceStreamData.queue.fnArray;
+        var appearanceArgsArray = appearanceStreamData.queue.argsArray;
+        var fnArray = [];
+        var argsArray = [];
+
+        // TODO(mack): Add support for stroke color
+        data.rgb = [0, 0, 0];
+        for (var i = 0, n = fnArray.length; i < n; ++i) {
+          var fnName = appearanceFnArray[i];
+          var args = appearanceArgsArray[i];
+          if (fnName === 'dependency') {
+            var dependency = args[i];
+            if (dependency.indexOf('g_font_') === 0) {
+              data.fontRefName = dependency;
+            }
+            fnArray.push(fnName);
+            argsArray.push(args);
+          } else if (fnName === 'setFont') {
+            data.fontRefName = args[0];
+            var size = args[1];
+            if (size < 0) {
+              data.fontDirection = -1;
+              data.fontSize = -size;
+            } else {
+              data.fontDirection = 1;
+              data.fontSize = size;
+            }
+          } else if (fnName === 'setFillRGBColor') {
+            data.rgb = args;
+          } else if (fnName === 'setFillGray') {
+            var rgbValue = args[0] * 255;
+            data.rgb = [rgbValue, rgbValue, rgbValue];
+          }
+        }
+        promise.resolve({
+          queue: {
+            fnArray: fnArray,
+            argsArray: argsArray
+          },
+          dependency: {}
+        });
+
+      });
+
+      return promise;
+    }
+  });
+
+  return TextWidgetAnnotation;
 })();
 
 var TextAnnotation = (function TextAnnotationClosure() {
@@ -498,7 +714,24 @@ var LinkAnnotation = (function LinkAnnotationClosure() {
     },
 
     getHtmlElement: function LinkAnnotation_getHtmlElement(commonObjs) {
-      var element = this.getEmptyContainer('a');
+      var rect = this.data.rect;
+      var element = document.createElement('a');
+      var borderWidth = this.data.borderWidth;
+
+      element.style.borderWidth = borderWidth + 'px';
+      var color = this.data.color;
+      var rgb = [];
+      for (var i = 0; i < 3; ++i) {
+        rgb[i] = Math.round(color[i] * 255);
+      }
+      element.style.borderColor = Util.makeCssRgb(rgb);
+      element.style.borderStyle = 'solid';
+
+      var width = rect[2] - rect[0] - 2 * borderWidth;
+      var height = rect[3] - rect[1] - 2 * borderWidth;
+      element.style.width = width + 'px';
+      element.style.height = height + 'px';
+
       element.href = this.data.url || '';
       return element;
     }

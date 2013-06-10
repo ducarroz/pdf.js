@@ -21,6 +21,7 @@
 /*
  * A Test Driver for PDF.js
  */
+(function DriverClosure() {
 
 // Disable worker support for running test as
 //   https://github.com/mozilla/pdf.js/pull/764#issuecomment-2638944
@@ -43,7 +44,7 @@ function queryParams() {
   return params;
 }
 
-function load() {
+window.load = function load() {
   var params = queryParams();
   browser = params.browser;
   var manifestFile = params.manifestFile;
@@ -79,7 +80,7 @@ function load() {
   setTimeout(function() {
     r.send(null);
   }, delay);
-}
+};
 
 function cleanup() {
   // Clear out all the stylesheets since a new one is created for each font.
@@ -152,6 +153,9 @@ function nextTask() {
 }
 
 function getLastPageNum(task) {
+  if (!task.pdfDoc) {
+    return task.firstPage || 1;
+  }
   var lastPageNum = task.lastPage || 0;
   if (!lastPageNum || lastPageNum > task.pdfDoc.numPages) {
     lastPageNum = task.pdfDoc.numPages;
@@ -416,3 +420,5 @@ function log(str) {
   if (str.lastIndexOf('\n') >= 0)
     checkScrolling();
 }
+
+})(); // DriverClosure
