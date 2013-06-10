@@ -4423,9 +4423,25 @@ var Font = (function FontClosure() {
         // Horizontal metrics
         'hmtx': (function fontFieldsHmtx() {
           var hmtx = '\x00\x00\x00\x00'; // Fake .notdef
+          var widthKeys = [];
+
+          if (properties.widths) {
+              for (var index in properties.widths) {
+                  widthKeys.push(index);
+              }
+          }
+
           for (var i = 0, ii = charstrings.length; i < ii; i++) {
             var charstring = charstrings[i];
             var width = 'width' in charstring ? charstring.width : 0;
+            if (width === 0) {
+
+                if(widthKeys[i] !== undefined && properties.widths[widthKeys[i]]) {
+                    width = properties.widths[widthKeys[i]];
+                } else {
+                    width = 500;    // Better set a width than 0 even if this is not the right one!
+                }
+            }
             hmtx += string16(width) + string16(0);
           }
           return stringToArray(hmtx);
@@ -5386,6 +5402,7 @@ var Type1Parser = (function Type1ParserClosure() {
         }
       }
 
+      var compiler = new CFFCompiler(null);
       for (var i = 0; i < charstrings.length; i++) {
         var glyph = charstrings[i].glyph;
         var encoded = charstrings[i].encoded;
@@ -5398,6 +5415,13 @@ var Type1Parser = (function Type1ParserClosure() {
           // here and put an endchar to make the validator happy.
           output = [14];
         }
+
+        // Set the advanced width
+        if (charString.width > 0) {
+            var encodedWidth = compiler.encodeInteger(charString.width);
+            output.unshift.apply(output, encodedWidth);
+        }
+
         program.charstrings.push({
           glyph: glyph,
           data: output,
