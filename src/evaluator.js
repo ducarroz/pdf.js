@@ -308,10 +308,22 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                       self.handler.send(
                          'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id]);
                   } else {
-                      PDFImage.buildImage(function(imageObj) {
-                          var imgData = imageObj.getImageData();
-                          self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id]);
-                        }, self.handler, self.xref, resources, image, inline);
+                      var buildImageRetry = function() {
+                          PDFImage.buildImage(function(imageObj) {
+                              var imgData = imageObj.getImageData();
+                              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id]);
+                            }, self.handler, self.xref, resources, image, inline);
+                      };
+
+                      try {
+                          buildImageRetry();
+                      } catch (e) {
+                        if (!(e instanceof MissingDataException)) {
+                          throw e;
+                        }
+
+                        self.pdfManager.requestRange(e.begin, e.end).then(buildImageRetry);
+                      }
                   }
               });
           } else {
