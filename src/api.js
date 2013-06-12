@@ -48,7 +48,8 @@
  */
 PDFJS.getDocument = function getDocument(source,
                                          pdfDataRangeTransport,
-                                         passwordCallback) {
+                                         passwordCallback,
+                                         progressCallback) {
   var workerInitializedPromise, workerReadyPromise, transport;
 
   if (typeof source === 'string') {
@@ -76,7 +77,7 @@ PDFJS.getDocument = function getDocument(source,
   workerInitializedPromise = new PDFJS.Promise();
   workerReadyPromise = new PDFJS.Promise();
   transport = new WorkerTransport(workerInitializedPromise,
-      workerReadyPromise, pdfDataRangeTransport);
+      workerReadyPromise, pdfDataRangeTransport, progressCallback);
   workerInitializedPromise.then(function transportInitialized() {
     transport.passwordCallback = passwordCallback;
     transport.fetchDocument(params);
@@ -350,17 +351,9 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
       var self = this;
       this.operatorList = operatorList;
 
-      var displayContinuation = function pageDisplayContinuation() {
-        // Always defer call to display() to work around bug in
-        // Firefox error reporting from XHR callbacks.
-        setTimeout(function pageSetTimeout() {
-          self.displayReadyPromise.resolve();
-        });
-      };
-
       this.ensureFonts(fonts,
         function pageStartRenderingFromOperatorListEnsureFonts() {
-          displayContinuation();
+          self.displayReadyPromise.resolve();
         }
       );
     },
@@ -480,10 +473,11 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
  */
 var WorkerTransport = (function WorkerTransportClosure() {
   function WorkerTransport(workerInitializedPromise, workerReadyPromise,
-      pdfDataRangeTransport) {
+      pdfDataRangeTransport, progressCallback) {
     this.pdfDataRangeTransport = pdfDataRangeTransport;
 
     this.workerReadyPromise = workerReadyPromise;
+    this.progressCallback = progressCallback;
     this.commonObjs = new PDFObjects();
 
     this.pageCache = [];
@@ -740,11 +734,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
      }, this);
 
       messageHandler.on('DocProgress', function transportDocProgress(data) {
-        // TODO(mack): The progress event should be resolved on a different
-        // promise that tracks progress of whole file, since workerReadyPromise
-        // is for file being ready to render, not for when file is fully
-        // downloaded
-        this.workerReadyPromise.progress({
+        this.progressCallback({
           loaded: data.loaded,
           total: data.total
         });

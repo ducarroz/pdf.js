@@ -250,6 +250,8 @@ var PDFFindController = {
 
   extractTextPromises: [],
 
+  pendingFindMatches: {},
+
   // If active, find results will be highlighted.
   active: false,
 
@@ -425,13 +427,13 @@ var PDFFindController = {
         this.updatePage(i);
 
         // As soon as the text is extracted start finding the matches.
-        this.extractTextPromises[i].onData(function(pageIdx) {
-          // Use a timeout since all the pages may already be extracted and we
-          // want to start highlighting before finding all the matches.
-          setTimeout(function() {
+        if (!(i in this.pendingFindMatches)) {
+          this.pendingFindMatches[i] = true;
+          this.extractTextPromises[i].then(function(pageIdx) {
+            delete self.pendingFindMatches[pageIdx];
             self.calcFindMatch(pageIdx);
           });
-        });
+        }
       }
     }
 
@@ -707,6 +709,7 @@ var PDFHistory = {
     this.currentPage = 0;
     this.updatePreviousBookmark = false;
     this.previousBookmark = '';
+    this.previousPage = 0;
     this.nextHashParam = '';
 
     this.fingerprint = fingerprint;
@@ -814,6 +817,7 @@ var PDFHistory = {
       this.currentPage = pageNum | 0;
       if (this.updatePreviousBookmark) {
         this.previousBookmark = this.currentBookmark;
+        this.previousPage = this.currentPage;
         this.updatePreviousBookmark = false;
       }
     }
@@ -875,8 +879,8 @@ var PDFHistory = {
       if (this.previousBookmark === this.currentBookmark) {
         return null;
       }
-    } else if (this.current.page) {
-      if (this.current.page === this.currentPage) {
+    } else if (this.current.page || onlyCheckPage) {
+      if (this.previousPage === this.currentPage) {
         return null;
       }
     } else {
@@ -992,7 +996,7 @@ var PDFView = {
   pageViewScroll: null,
   thumbnailViewScroll: null,
   isPresentationMode: false,
-  previousScale: null,
+  presentationModeArgs: null,
   pageRotation: 0,
   mouseScrollTimeStamp: 0,
   mouseScrollDelta: 0,
@@ -1355,7 +1359,12 @@ var PDFView = {
       }
     };
 
-    PDFJS.getDocument(parameters, pdfDataRangeTransport, passwordNeeded).then(
+    function getDocumentProgress(progressData) {
+      self.progress(progressData.loaded / progressData.total);
+    }
+
+    PDFJS.getDocument(parameters, pdfDataRangeTransport, passwordNeeded,
+                      getDocumentProgress).then(
       function getDocumentCallback(pdfDocument) {
         self.load(pdfDocument, scale);
         self.loading = false;
@@ -1390,9 +1399,6 @@ var PDFView = {
         };
         self.error(loadingErrorMessage, moreInfo);
         self.loading = false;
-      },
-      function getDocumentProgress(progressData) {
-        self.progress(progressData.loaded / progressData.total);
       }
     );
   },
@@ -2184,29 +2190,29 @@ var PDFView = {
     } else {
       return false;
     }
+
+    this.presentationModeArgs = {
+      page: this.page,
+      previousScale: this.currentScaleValue
+    };
+
     return true;
   },
 
   enterPresentationMode: function pdfViewEnterPresentationMode() {
     this.isPresentationMode = true;
-    var currentPage = this.pages[this.page - 1];
-    this.previousScale = this.currentScaleValue;
+    this.page = this.presentationModeArgs.page;
     this.parseScale('page-fit', true);
-
-    // Wait for presentation mode to take effect
-    setTimeout(function() {
-      currentPage.scrollIntoView();
-    }, 0);
-
     this.showPresentationControls();
   },
 
   exitPresentationMode: function pdfViewExitPresentationMode() {
     this.isPresentationMode = false;
-    this.parseScale(this.previousScale);
+    this.parseScale(this.presentationModeArgs.previousScale);
     this.page = this.page;
     this.clearMouseScrollState();
     this.hidePresentationControls();
+    this.presentationModeArgs = null;
 
     // Ensure that the thumbnail of the current page is visible
     // when exiting presentation mode.
