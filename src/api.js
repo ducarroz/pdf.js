@@ -376,13 +376,22 @@ var PDFPageProxy = (function PDFPageProxyClosure() {
         fontObjs.push(obj);
       }
 
+      var cb = function() {
+          if (PDFJS.objectsCache && fontObjs && fontObjs.length) {
+            PDFJS.objectsCache.setFonts(fontObjs, function() {
+                callback.call(this);
+            });
+          } else {
+              callback.call(this);
+          }
+      }
+
       // Load all the fonts
       FontLoader.bind(
         fontObjs,
-        function pageEnsureFontsFontObjs(fontObjs) {
+        function pageEnsureFontsFontObjs() {
           this.stats.timeEnd('Font Loading');
-
-          callback.call(this);
+          cb.call(this);
         }.bind(this)
       );
     },
@@ -477,7 +486,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
     this.pdfDataRangeTransport = pdfDataRangeTransport;
 
     this.workerReadyPromise = workerReadyPromise;
-    this.progressCallback = progressCallback;
+    this.progressCallback = progressCallback || function(){};
     this.commonObjs = new PDFObjects();
 
     this.pageCache = [];
