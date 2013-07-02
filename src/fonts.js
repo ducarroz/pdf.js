@@ -2410,6 +2410,9 @@ var Font = (function FontClosure() {
     this.wideChars = properties.wideChars;
     this.hasEncoding = properties.hasEncoding;
 
+    this.ascent = properties.ascent;
+    this.descent = properties.descent;
+
     this.fontMatrix = properties.fontMatrix;
     if (properties.type == 'Type3') {
       this.encoding = properties.baseEncoding;
@@ -4295,6 +4298,62 @@ var Font = (function FontClosure() {
       return stringToArray(ttf.file);
     },
 
+    remapFont: function(font, properties) {
+       var toUnicode = properties.toUnicode,
+           firstGlyph = true,
+           glyphUnicode = [],
+           usedUnicode = {},
+           validFont = true;
+
+       if (toUnicode && font.charstrings) {
+           font.charstrings.every(function(glyphInfo, index) {
+               var value = GlyphsUnicode[glyphInfo.glyph] || glyphInfo.code;
+
+               if (typeof value === "number" && value != 0) {
+                    // Only use the toUnicode tble if we are dealing with a glyph without a valid name
+                    if (GlyphsUnicode[glyphInfo.glyph] === undefined && value in toUnicode)
+                    {
+                        console.log("-->", toUnicode[value])
+                        value = toUnicode[value];
+                        if (typeof value === "string") {
+                           if (value.length == 2) {
+                               if (value.charCodeAt(0) == 32) {
+                                   value = glyphInfo.unicode.charCodeAt(1);
+                               } else {
+                                   value = glyphInfo.unicode.charCodeAt(0) * 256 + glyphInfo.unicode.charCodeAt(1);
+                               }
+                           } else {
+                               value = glyphInfo.unicode.charCodeAt(0);
+                           }
+                        }
+                   }
+
+                   glyphUnicode[index] = value;
+                   if (value in usedUnicode) {
+                       validFont = false;
+                       return false;
+                   } else {
+                       usedUnicode[value] = true;
+                   }
+               }
+
+               firstGlyph = false;
+               return true;
+           });
+
+           if (validFont) {
+               font.remaped = true;
+               font.charstrings.forEach(function(glyphInfo, index) {
+                   if (index in glyphUnicode) {
+                       glyphInfo.unicode = glyphUnicode[index];
+                   }
+               });
+           } else {
+               console.log("FONT REMAPPING FAILED!!!")
+           }
+       }
+    },
+
     convert: function Font_convert(fontName, font, properties) {
       function isFixedPitch(glyphs) {
         for (var i = 0, ii = glyphs.length - 1; i < ii; i++) {
@@ -4314,6 +4373,9 @@ var Font = (function FontClosure() {
         file: '',
         virtualOffset: 9 * (4 * 4)
       };
+
+      // Remap the font
+      this.remapFont(font, properties);
 
       createOpenTypeHeader('\x4F\x54\x54\x4F', otf, 9);
 
