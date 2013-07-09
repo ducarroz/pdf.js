@@ -2679,7 +2679,7 @@ var Font = (function FontClosure() {
     if (ranges[i][0] < 0xFFFF && ranges[i][1] === 0xFFFF) {
       ranges[i][1] = 0xFFFE;
     }
-    var trailingRangesCount = ranges[i][1] < 0xFFFF ? 1 : 0; 
+    var trailingRangesCount = ranges[i][1] < 0xFFFF ? 1 : 0;
     var segCount = bmpLength + trailingRangesCount;
     var segCount2 = segCount * 2;
     var searchRange = getMaxPower2(segCount) * 2;
@@ -5904,7 +5904,7 @@ var CFFFont = (function CFFFontClosure() {
       } else {
         for (var charcode in encoding)
           inverseEncoding[encoding[charcode]] = charcode | 0;
-        if (charsets[0] === '.notedef') {
+        if (charsets[0] === '.notdef') {
           gidStart = 1;
         }
       }
