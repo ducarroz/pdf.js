@@ -4438,7 +4438,15 @@ var Font = (function FontClosure() {
         this.toFontChar = toFontChar;
       }
       var unitsPerEm = 1 / (properties.fontMatrix || FONT_IDENTITY_MATRIX)[0];
-      var nbrExtraNotdefGlyph = (properties.subtype == 'Type1C' || properties.subtype == 'CIDFontType0C') ? 0 : 1;
+
+      var nbrExtraNotdefGlyph = 1;
+      if (properties.subtype == 'Type1C' || properties.subtype == 'CIDFontType0C') {
+          if (properties.cidSystemInfo) {
+              nbrExtraNotdefGlyph = 0;
+          } else if (font.cff && font.cff.charset && font.cff.charset.charset && font.cff.charset.charset[0] !== ".notdef") {
+              nbrExtraNotdefGlyph = 0;
+          }
+      }
 
       var fields = {
         // PostScript Font Program
