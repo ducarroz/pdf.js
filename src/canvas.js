@@ -547,7 +547,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var slowCommands = this.slowCommands;
 
       var graphicCommandLogCount = 0;
-      var graphicCommands = ["moveTo", "lineTo", "curveTo"];
+      var graphicCommands = ["moveTo", "lineTo", "curveTo", "rectangle"];
 
       while (true) {
         if (stepper && i === stepper.nextBreakPoint) {
@@ -569,10 +569,10 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
           graphicCommandLogCount = 0;
         }
 
-        if (graphicCommandLogCount == 10) {
+        if (graphicCommandLogCount == 4) {
           console.log("   ---op: [...snap...]");
-        } else if (graphicCommandLogCount < 10) {
-          console.log("   ---op:", fnName, log);
+        } else if (graphicCommandLogCount < 4) {
+          console.log("   ---op:", fnName, typeof log === "string" && log.length > 64 ? log.substr(0, 61) + "..." : log);
         }
 
         if (fnName !== 'dependency') {
