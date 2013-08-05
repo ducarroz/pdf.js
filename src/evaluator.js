@@ -262,10 +262,18 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var softMask = dict.get('SMask', 'SM') || false;
       var mask = dict.get('Mask') || false;
 
+if (softMask || mask)
+console.log("@@@@ softMask:", softMask, "mask:", mask)
+
       var SMALL_IMAGE_DIMENSIONS = 200;
 
+        // Force tiny jpeg image to be inline
+        if (!(image instanceof JpegStream) && (w + h) < (SMALL_IMAGE_DIMENSIONS / 2)) {
+            inline = true;
+        }
+
       // Inlining small images into the queue as RGB data
-      if (!PDFJS.useExternalDiskCache && inline && !softMask && !mask &&
+      if (inline && !softMask && !mask &&
           !(image instanceof JpegStream) &&
           (w + h) < SMALL_IMAGE_DIMENSIONS) {
         var imageObj = new PDFImage(this.xref, resources, image,
