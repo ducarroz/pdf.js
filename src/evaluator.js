@@ -261,9 +261,11 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       var softMask = dict.get('SMask', 'SM') || false;
       var mask = dict.get('Mask') || false;
+      var hasMask = (softMask !== false || mask !== false);
 
-if (softMask || mask)
-console.log("@@@@ softMask:", softMask, "mask:", mask)
+if (hasMask) {
+    console.log("@@@@ softMask:", !(!softMask) , "mask:", !(!mask))
+}
 
       var SMALL_IMAGE_DIMENSIONS = 200;
 
@@ -291,38 +293,38 @@ console.log("@@@@ softMask:", softMask, "mask:", mask)
       dependencies[objId] = true;
       retData.args = [objId, w, h];
 
-      if (!softMask && !mask && image instanceof JpegStream &&
+      if (!hasMask && image instanceof JpegStream &&
           image.isNativelySupported(this.xref, resources)) {
         // These JPEGs don't need any more processing so we can just send it.
         retData.fn = 'paintJpegXObject';
         if (PDFJS.useExternalDiskCache) {
-            this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', object_reference_id], function(url) {
+            this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', object_reference_id, hasMask], function(url) {
                 if (url && url.length) {
                     self.handler.send(
-                        'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id]);
+                        'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id, hasMask]);
                 } else {
                     self.handler.send(
-                        'obj', [objId, self.pageIndex, 'JpegStream', image.getIR(), object_reference_id]);
+                        'obj', [objId, self.pageIndex, 'JpegStream', image.getIR(), object_reference_id, hasMask]);
                 }
             });
         } else {
             this.handler.send(
-                'obj', [objId, this.pageIndex, 'JpegStream', image.getIR(), object_reference_id]);
+                'obj', [objId, this.pageIndex, 'JpegStream', image.getIR(), object_reference_id, hasMask]);
         }
       } else {
           retData.fn = 'paintImageXObject';
 
           if (PDFJS.useExternalDiskCache) {
-              this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', object_reference_id], function(url) {
+              this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', object_reference_id, hasMask], function(url) {
                   if (url && url.length) {
                       // JFD TODO: we need to get the image dimensions and pass them along...
                       self.handler.send(
-                         'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id]);
+                         'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id, hasMask]);
                   } else {
                       var buildImageRetry = function() {
                           PDFImage.buildImage(function(imageObj) {
                               var imgData = imageObj.getImageData();
-                              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id]);
+                              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id, hasMask]);
                             }, self.handler, self.xref, resources, image, inline);
                       };
 
@@ -340,7 +342,7 @@ console.log("@@@@ softMask:", softMask, "mask:", mask)
           } else {
               PDFImage.buildImage(function(imageObj) {
                   var imgData = imageObj.getImageData();
-                  self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id]);
+                  self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id, hasMask]);
                 }, self.handler, self.xref, resources, image, inline);
           }
       }
