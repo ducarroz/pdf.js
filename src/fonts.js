@@ -4315,14 +4315,18 @@ var Font = (function FontClosure() {
                     {
                         value = toUnicode[value];
                         if (typeof value === "string") {
-                           if (value.length == 2) {
-                               if (value.charCodeAt(0) == 32) {
-                                   value = glyphInfo.unicode.charCodeAt(1);
+                           if (typeof glyphInfo.unicode === "string") {
+                               if (value.length == 2) {
+                                   if (value.charCodeAt(0) == 32) {
+                                       value = glyphInfo.unicode.charCodeAt(1);
+                                   } else {
+                                       value = glyphInfo.unicode.charCodeAt(0) * 256 + glyphInfo.unicode.charCodeAt(1);
+                                   }
                                } else {
-                                   value = glyphInfo.unicode.charCodeAt(0) * 256 + glyphInfo.unicode.charCodeAt(1);
+                                   value = glyphInfo.unicode.charCodeAt(0);
                                }
                            } else {
-                               value = glyphInfo.unicode.charCodeAt(0);
+                               value = glyphInfo.unicode;
                            }
                         }
                    }
