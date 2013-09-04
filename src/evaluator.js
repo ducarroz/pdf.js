@@ -249,13 +249,54 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         var width = dict.get('Width', 'W');
         var height = dict.get('Height', 'H');
         var bitStrideLength = (width + 7) >> 3;
-        var imgArray = image.getBytes(bitStrideLength * height);
         var decode = dict.get('Decode', 'D');
         var inverseDecode = !!decode && decode[0] > 0;
 
-        retData.fn = 'paintImageMaskXObject';
-        retData.args = [PDFImage.createMask(imgArray, width, height,
-                                            inverseDecode)];
+        if (PDFJS.useExternalDiskCache) {
+            var uniquePrefix = this.uniquePrefix || '';
+            var objId = 'img_' + uniquePrefix + (++this.idCounters.obj);
+            dependencies[objId] = true;
+            retData.args = [objId, w, h];
+
+            retData.fn = 'paintImageMaskXObject';
+            this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', object_reference_id, false], function(url) {
+                if (url && url.length) {
+                    self.handler.send(
+                        'obj', [objId, self.pageIndex, 'remoteImage', url, object_reference_id, true]);
+                } else {
+                    //build the mask image
+                    var imgArray = image.getBytes(bitStrideLength * height);
+                    var imageObj = PDFImage.createMask(imgArray, width, height, inverseDecode);
+
+                    var imgData = {
+                        width: width,
+                        height: height,
+                        data: imageObj.data
+                    };
+
+                    // SVG mask use luminance of white instead on black like does PDF, we need to inverse the colors
+                    var data = imgData.data,
+                        dataLength = data.length,
+                        i;
+
+                    for (i = 0; i < dataLength - 4; i += 4) {
+                        data[i] = 255 - data[i];
+                        data[i + 1] = 255 - data[i + 1];
+                        data[i + 2] = 255 - data[i + 2];
+                    }
+
+                    self.handler.send(
+                        'obj', [objId, self.pageIndex, 'Image', imgData, object_reference_id, true]);
+                }
+            });
+        } else {
+            var imgArray = image.getBytes(bitStrideLength * height);
+
+            retData.fn = 'paintImageMaskXObject';
+            retData.args = [PDFImage.createMask(imgArray, width, height,
+                                                inverseDecode), width, height];
+        }
+
         return retData;
       }
 

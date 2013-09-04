@@ -1661,11 +1661,21 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       this.restore();
     },
 
-    paintImageMaskXObject: function CanvasGraphics_paintImageMaskXObject(img) {
+    paintImageMaskXObject: function CanvasGraphics_paintImageMaskXObject(object, width, height) {
       var ctx = this.ctx;
-      var width = img.width, height = img.height;
 
       var glyph = this.processingType3;
+
+      if (typeof object == "string") {
+          var img = this.objs.get(object);
+          if (!img) {
+            error('Dependent image isn\'t ready yet');
+          }
+      } else {
+         img = object;
+         width = img.width;
+         height = img.height;
+      }
 
       if (COMPILE_TYPE3_GLYPHS && glyph && !('compiled' in glyph)) {
         var MAX_SIZE_TO_COMPILE = 1000;
@@ -1686,7 +1696,12 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       var maskCtx = maskCanvas.getContext('2d');
       maskCtx.save();
 
-      putBinaryImageData(maskCtx, img);
+      if (img instanceof Image) {
+          maskCtx.drawImage(img, 0, 0, img.width, img.height,
+                        0, 0, img.width, img.height);
+      } else {
+        putBinaryImageData(maskCtx, img);
+      }
 
       maskCtx.globalCompositeOperation = 'source-in';
 
