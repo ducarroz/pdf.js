@@ -386,7 +386,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
   // before it stops and shedules a continue of execution.
   var EXECUTION_TIME = 15;
 
-  function CanvasGraphics(canvasCtx, commonObjs, objs, textLayer, imageLayer) {
+  function CanvasGraphics(canvasCtx, commonObjs, objs, textLayer, imageLayer, preprocessor) {
     this.ctx = canvasCtx;
     this.current = new CanvasExtraState();
     this.stateStack = [];
@@ -398,6 +398,7 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
     this.objs = objs;
     this.textLayer = textLayer;
     this.imageLayer = imageLayer;
+    this.preprocessor = preprocessor;
     this.groupStack = [];
     this.processingType3 = null;
     // Patterns are painted relative to the initial page/form transform, see pdf
@@ -517,6 +518,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       if (this.imageLayer) {
         this.imageLayer.beginLayout();
       }
+      if (this.preprocessor) {
+        this.preprocessor.beginLayout();
+      }
     },
 
     executeOperatorList: function CanvasGraphics_executeOperatorList(
@@ -550,7 +554,16 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
         fnName = fnArray[i];
 
         if (fnName !== 'dependency') {
-          this[fnName].apply(this, argsArray[i]);
+          var skipOperator = false;
+          if (this.preprocessor && this.preprocessor[fnName]) {
+            var args = argsArray[i];
+            args.unshift(this);
+            skipOperator = this.preprocessor[fnName].apply(this.preprocessor, args);
+            args.shift();
+          }
+          if (skipOperator !== true) {
+            this[fnName].apply(this, argsArray[i]);
+          }
         } else {
           var deps = argsArray[i];
           for (var n = 0, nn = deps.length; n < nn; n++) {
@@ -599,6 +612,9 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       }
       if (this.imageLayer) {
         this.imageLayer.endLayout();
+      }
+      if (this.preprocessor) {
+        this.preprocessor.endLayout();
       }
     },
 

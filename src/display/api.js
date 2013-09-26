@@ -991,7 +991,7 @@ var InternalRenderTask = (function InternalRenderTaskClosure() {
       var params = this.params;
       this.gfx = new CanvasGraphics(params.canvasContext, this.commonObjs,
                                     this.objs, params.textLayer,
-                                    params.imageLayer);
+                                    params.imageLayer, params.preprocessor);
 
       this.gfx.beginDrawing(params.viewport, transparency);
       this.operatorListIdx = 0;
