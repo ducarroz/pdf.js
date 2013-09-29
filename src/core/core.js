@@ -124,12 +124,16 @@ var Page = (function PageClosure() {
       }
       var promise = new Promise();
       this.resourcesPromise.then(function resourceSuccess() {
-        var objectLoader = new ObjectLoader(this.resources.map,
-                                            keys,
-                                            this.xref);
-        objectLoader.load().then(function objectLoaderSuccess() {
+        if (this.resources) {
+          var objectLoader = new ObjectLoader(this.resources.map,
+                                              keys,
+                                              this.xref);
+          objectLoader.load().then(function objectLoaderSuccess() {
+            promise.resolve();
+          });
+        } else {
           promise.resolve();
-        });
+        }
       }.bind(this));
       return promise;
     },

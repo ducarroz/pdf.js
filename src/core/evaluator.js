@@ -233,11 +233,12 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
     },
 
     buildPaintImageXObject: function PartialEvaluator_buildPaintImageXObject(
-                                resources, image, inline, operatorList) {
+                                resources, image, reference, inline, operatorList) {
       var self = this;
       var dict = image.dict;
       var w = dict.get('Width', 'W');
       var h = dict.get('Height', 'H');
+      var _completion = null;
 
       if (PDFJS.maxImageSize !== -1 && w * h > PDFJS.maxImageSize) {
         warn('Image exceeded maximum allowed size and was removed.');
@@ -246,7 +247,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
       var imageMask = dict.get('ImageMask', 'IM') || false;
       if (imageMask) {
-        // This depends on a tmpCanvas beeing filled with the
+        // This depends on a tmpCanvas being filled with the
         // current fillStyle, such that processing the pixel
         // data can't be done here. Instead of creating a
         // complete PDFImage, only read the information needed
@@ -270,8 +271,10 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var mask = dict.get('Mask') || false;
 
       var SMALL_IMAGE_DIMENSIONS = 200;
+        // JFD TODO: do we want to inline small image when we have an external objects cache
       // Inlining small images into the queue as RGB data
-      if (inline && !softMask && !mask &&
+      if (!PDFJS.useExternalObjectsCache &&
+          inline && !softMask && !mask &&
           !(image instanceof JpegStream) &&
           (w + h) < SMALL_IMAGE_DIMENSIONS) {
         var imageObj = new PDFImage(this.xref, resources, image,
@@ -292,16 +295,52 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           image.isNativelySupported(this.xref, resources)) {
         // These JPEGs don't need any more processing so we can just send it.
         operatorList.addOp('paintJpegXObject', args);
-        this.handler.send(
-            'obj', [objId, this.pageIndex, 'JpegStream', image.getIR()]);
+
+        _completion = function(type, data) {
+          self.handler.send( 'obj', [objId, self.pageIndex, type, data, reference]);
+        };
+
+        if (PDFJS.useExternalObjectsCache) {
+          this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', reference], function(url) {
+            if (url && url.length) {
+              _completion('remoteImage', url);
+            } else {
+              _completion('JpegStream', image.getIR());
+            }
+          });
+        } else {
+          _completion('JpegStream', image.getIR());
+        }
+
         return;
       }
 
+      _completion = function() {
+          PDFImage.buildImage(function(imageObj) {
+              var imgData = imageObj.getImageData();
+              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData]);
+          }, self.handler, self.xref, resources, image, inline);
+      };
 
-      PDFImage.buildImage(function(imageObj) {
-          var imgData = imageObj.getImageData();
-          self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData]);
-        }, self.handler, self.xref, resources, image, inline);
+      if (PDFJS.useExternalObjectsCache) {
+        this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', reference], function(url) {
+          if (url && url.length) {
+              self.handler.send( 'obj', [objId, self.pageIndex, 'remoteImage', url, reference]);
+          } else {
+            try {
+              _completion();
+            } catch (e) {
+              if (!(e instanceof MissingDataException)) {
+                throw e;
+              }
+
+              self.pdfManager.requestRange(e.begin, e.end).then(_completion);
+            }
+          }
+        });
+      } else {
+        _completion();
+      }
 
       operatorList.addOp('paintImageXObject', args);
     },
@@ -628,7 +667,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                 args = [];
                 continue;
               } else if ('Image' == type.name) {
-                self.buildPaintImageXObject(resources, xobj, false,
+                self.buildPaintImageXObject(resources, xobj, xobjs.getRaw(name), false,
                                             operatorList);
                 args = [];
                 continue;
@@ -643,7 +682,7 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             fn = 'setFont';
             args[0] = loadedName;
           } else if (cmd == 'EI') {
-            self.buildPaintImageXObject(resources, args[0], true, operatorList);
+            self.buildPaintImageXObject(resources, args[0], xobjs.getRaw(args[0].name), true, operatorList);
             args = [];
             continue;
           } else if (cmd === 'q') { // save

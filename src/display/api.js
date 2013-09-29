@@ -679,7 +679,14 @@ var WorkerTransport = (function WorkerTransportClosure() {
             FontLoader.bind(
               [font],
               function fontReady(fontObjs) {
-                this.commonObjs.resolve(id, font);
+                if (PDFJS.objectsCache) {
+                    var self = this;
+                    PDFJS.objectsCache.setFonts([font], function() {
+                        self.commonObjs.resolve(id, font);
+                    });
+                } else {
+                    this.commonObjs.resolve(id, font);
+                }
               }.bind(this)
             );
             break;
@@ -694,29 +701,60 @@ var WorkerTransport = (function WorkerTransportClosure() {
       messageHandler.on('obj', function transportObj(data) {
         var id = data[0];
         var pageIndex = data[1];
-        var type = data[2];
         var pageProxy = this.pageCache[pageIndex];
         if (pageProxy.objs.hasData(id))
           return;
 
-        switch (type) {
-          case 'JpegStream':
-            var imageData = data[3];
-            loadJpegStream(id, imageData, pageProxy.objs);
-            break;
-          case 'Image':
-            var imageData = data[3];
-            pageProxy.objs.resolve(id, imageData);
+        var _processImage = function() {
+          var type = data[2];
+          switch (type) {
+            case 'JpegStream':
+              var imageData = data[3];
+              loadJpegStream(id, imageData, pageProxy.objs);
+              break;
+            case 'remoteImage':
+              var imageUrl = data[3];
+              loadRemoteImage(id, imageUrl, pageProxy.objs);
+              break;
+            case 'Image':
+              var imageData = data[3];
+              pageProxy.objs.resolve(id, imageData);
 
-            // heuristics that will allow not to store large data
-            var MAX_IMAGE_SIZE_TO_STORE = 8000000;
-            if ('data' in imageData &&
-                imageData.data.length > MAX_IMAGE_SIZE_TO_STORE) {
-              pageProxy.cleanupAfterRender = true;
+              // heuristics that will allow not to store large data
+              var MAX_IMAGE_SIZE_TO_STORE = 8000000;
+              if ('data' in imageData &&
+                  imageData.data.length > MAX_IMAGE_SIZE_TO_STORE) {
+                pageProxy.cleanupAfterRender = true;
+              }
+              break;
+            default:
+              error('Got unknown object type ' + type);
+          }
+        }
+
+        if (PDFJS.useExternalObjectsCache && PDFJS.objectsCache) {
+          PDFJS.objectsCache.setObject(data, pageProxy, function(url) {
+            if (url && url.length) {
+              data[2] = "remoteImage";
+              data[3] = url;
             }
-            break;
-          default:
-            error('Got unknown object type ' + type);
+            _processImage(data);
+          });
+        } else {
+          _processImage(data);
+        }
+      }, this);
+
+      messageHandler.on('GetObjUrl', function transportObjectUrl(data, responsePromise) {
+        if (PDFJS.objectsCache) {
+          var pageIndex = data[1];
+          var pageProxy = this.pageCache[pageIndex];
+
+          PDFJS.objectsCache.objectUrl(data, pageProxy, function(url) {
+            responsePromise.resolve(url);
+          });
+        } else {
+           responsePromise.resolve(null);
         }
       }, this);
 
@@ -784,7 +822,8 @@ var WorkerTransport = (function WorkerTransportClosure() {
         source: source,
         disableRange: PDFJS.disableRange,
         maxImageSize: PDFJS.maxImageSize,
-        disableFontFace: PDFJS.disableFontFace
+        disableFontFace: PDFJS.disableFontFace,
+        useExternalObjectsCache: PDFJS.useExternalObjectsCache
       });
     },
 

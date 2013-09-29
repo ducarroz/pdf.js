@@ -1700,10 +1700,14 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
       }
     },
 
-    paintImageXObject: function CanvasGraphics_paintImageXObject(objId) {
+    paintImageXObject: function CanvasGraphics_paintImageXObject(objId, w, h) {
       var imgData = this.objs.get(objId);
       if (!imgData)
         error('Dependent image isn\'t ready yet');
+
+      if (imgData instanceof Image) {
+        return this.paintJpegXObject(objId, w, h);
+      }
 
       this.paintInlineImageXObject(imgData);
     },
