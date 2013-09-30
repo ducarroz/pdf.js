@@ -256,19 +256,57 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         var width = dict.get('Width', 'W');
         var height = dict.get('Height', 'H');
         var bitStrideLength = (width + 7) >> 3;
-        var imgArray = image.getBytes(bitStrideLength * height);
         var decode = dict.get('Decode', 'D');
         var inverseDecode = !!decode && decode[0] > 0;
 
-        operatorList.addOp('paintImageMaskXObject',
-          [PDFImage.createMask(imgArray, width, height,
-                                            inverseDecode)]
-        );
+        if (PDFJS.useExternalObjectsCache) {
+          var uniquePrefix = this.uniquePrefix || '';
+          var objId = 'img_' + uniquePrefix + (++this.idCounters.obj);
+
+          operatorList.addDependency(objId);
+          operatorList.addOp('paintImageMaskXObject', [objId, width, height]);
+
+          this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', reference, false], function(url) {
+            if (url && url.length) {
+              self.handler.send('obj', [objId, self.pageIndex, 'remoteImage', url, reference, true]);
+            } else {
+              //build the mask image
+              var imgArray = image.getBytes(bitStrideLength * height);
+              var imageObj = PDFImage.createMask(imgArray, width, height, inverseDecode);
+
+              var imgData = {
+                width: width,
+                height: height,
+                data: imageObj.data
+              };
+
+              // SVG mask use luminance of white instead on black like does PDF, we need to inverse the colors
+              var data = imgData.data,
+                  dataLength = data.length,
+                  i;
+
+              for (i = 0; i < dataLength - 4; i += 4) {
+                data[i] = 255 - data[i];
+                data[i + 1] = 255 - data[i + 1];
+                data[i + 2] = 255 - data[i + 2];
+              }
+
+              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, true]);
+            }
+          });
+        } else {
+          var imgArray = image.getBytes(bitStrideLength * height);
+          operatorList.addOp('paintImageMaskXObject',
+            [PDFImage.createMask(imgArray, width, height,
+                                              inverseDecode), width, height]
+          );
+        }
         return;
       }
 
       var softMask = dict.get('SMask', 'SM') || false;
       var mask = dict.get('Mask') || false;
+      var hasMask = (softMask !== false || mask !== false);
 
       var SMALL_IMAGE_DIMENSIONS = 200;
 
@@ -295,17 +333,17 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       operatorList.addDependency(objId);
       var args = [objId, w, h];
 
-      if (!softMask && !mask && image instanceof JpegStream &&
+      if (!hasMask && image instanceof JpegStream &&
           image.isNativelySupported(this.xref, resources)) {
         // These JPEGs don't need any more processing so we can just send it.
         operatorList.addOp('paintJpegXObject', args);
 
         _completion = function(type, data) {
-          self.handler.send( 'obj', [objId, self.pageIndex, type, data, reference]);
+          self.handler.send( 'obj', [objId, self.pageIndex, type, data, reference, hasMask]);
         };
 
         if (PDFJS.useExternalObjectsCache) {
-          this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', reference], function(url) {
+          this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', reference, hasMask], function(url) {
             if (url && url.length) {
               _completion('remoteImage', url);
             } else {
@@ -322,14 +360,14 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       _completion = function() {
           PDFImage.buildImage(function(imageObj) {
               var imgData = imageObj.getImageData();
-              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData]);
+              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, hasMask]);
           }, self.handler, self.xref, resources, image, inline);
       };
 
       if (PDFJS.useExternalObjectsCache) {
-        this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', reference], function(url) {
+        this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'JpegStream', reference, hasMask], function(url) {
           if (url && url.length) {
-              self.handler.send( 'obj', [objId, self.pageIndex, 'remoteImage', url, reference]);
+              self.handler.send( 'obj', [objId, self.pageIndex, 'remoteImage', url, reference, hasMask]);
           } else {
             try {
               _completion();
