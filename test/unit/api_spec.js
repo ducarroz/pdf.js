@@ -6,7 +6,6 @@
 
 describe('api', function() {
   // TODO run with worker enabled
-  PDFJS.disableWorker = true;
   var basicApiUrl = combineUrl(window.location.href, '../pdfs/basicapi.pdf');
   function waitsForPromise(promise, successCallback) {
     var data;
@@ -20,7 +19,7 @@ describe('api', function() {
     });
     waitsFor(function() {
       return data !== undefined;
-    }, 10000);
+    }, 20000);
   }
   describe('PDFJS', function() {
     describe('getDocument', function() {

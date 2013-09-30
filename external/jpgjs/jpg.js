@@ -800,7 +800,7 @@ var JpegImage = (function jpegImage() {
           component2 = this.components[1];
           for (y = 0; y < height; y++) {
             component1Line = component1.lines[0 | (y * component1.scaleY * scaleY)];
-            component2Line = component1.lines[0 | (y * component2.scaleY * scaleY)];
+            component2Line = component2.lines[0 | (y * component2.scaleY * scaleY)];
             for (x = 0; x < width; x++) {
               Y = component1Line[0 | (x * component1.scaleX * scaleX)];
               data[offset++] = Y;
@@ -847,8 +847,6 @@ var JpegImage = (function jpegImage() {
           }
           break;
         case 4:
-          if (!this.adobe)
-            throw 'Unsupported color mode (4 components)';
           // The default transform for four components is false
           colorTransform = false;
           // The adobe transform marker overrides any previous setting

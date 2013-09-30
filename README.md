@@ -14,8 +14,8 @@ get involved checkout:
 + [Workflow](https://github.com/mozilla/pdf.js/wiki/Contributing)
 + [Style Guide](https://github.com/mozilla/pdf.js/wiki/Style-Guide)
 + [Good Beginner Bugs](https://github.com/mozilla/pdf.js/issues?direction=desc&labels=5-good-beginner-bug&page=1&sort=created&state=open)
-+ [Priorities](https://etherpad.mozilla.org/pdfjs-priorities)
-+ [Attend a Public Meeting](#weekly-public-meetings)
++ [Priorities](https://github.com/mozilla/pdf.js/issues/milestones)
++ [Attend a Public Meeting](https://github.com/mozilla/pdf.js/wiki/Weekly-Public-Meetings)
 
 For further questions or guidance feel free to stop by #pdfjs on
 irc.mozilla.org.
@@ -36,14 +36,17 @@ available that are updated at a different rate:
 + [Development Version](http://mozilla.github.io/pdf.js/extensions/firefox/pdf.js.xpi) - This version is updated every time new code is merged into the PDF.js codebase. This should be quite stable but still might break from time to time.
 + [Stable Version](https://addons.mozilla.org/firefox/addon/pdfjs) - After version 24 of Firefox is released we no longer plan to support the stable extension. The stable version will then be considered whatever is built into Firefox.
 
-#### Chrome
-The Chrome extension is still somewhat experimental but it can be installed two
+#### Chrome and Opera
+
+The Chromium extension is still somewhat experimental but it can be installed two
 ways:
 
 + [Unofficial Version](https://chrome.google.com/webstore/detail/pdf-viewer/oemmndcbldboiebfnladdacbdfmadadm) - *This extension is maintained by a PDF.js contributor.*
-+ Build Your Own - Get the code as explained below and issue `node make extension`. Then open
++ Build Your Own - Get the code as explained below and issue `node make chromium`. Then open
 Chrome, go to `Tools > Extension` and load the (unpackaged) extension from the
-directory `build/chrome`.
+directory `build/chromium`.
+
+The version of the extension for the Opera browser can be found at the [Opera add-ons catalog](https://addons.opera.com/en/extensions/details/pdf-viewer/).
 
 ## Getting the Code
 
@@ -69,15 +72,16 @@ You can also view all the test pdf files on the right side serving
 
 ## Building PDF.js
 
-In order to bundle all `src/` files into a final `pdf.js` and build the generic
+In order to bundle all `src/` files into two productions scripts and build the generic
 viewer, issue:
 
     $ node make generic
 
-This will generate the file `build/generic/build/pdf.js` that can be included in
-your final project. The pdf.js file is large and should be minified for
-production. Also, if you would like to support more browsers than Firefox you'll
-also need to include `compatibility.js` from `build/generic/web/`.
+This will generate `pdf.js` and `pdf.worker.js` in the `build/generic/build/` directory.
+Both scripts are needed but only `pdf.js` needs to be included since `pdf.worker.js` will
+be loaded by `pdf.js`. If you want to support more browsers than Firefox you'll also need
+to include `compatibility.js` from `build/generic/web/`. The PDF.js files are large and
+should be minified for production.
 
 ## Learning
 
@@ -124,21 +128,6 @@ Follow us on twitter: @pdfjs
 
 + http://twitter.com/#!/pdfjs
 
-## Weekly Public Meetings
+Weekly Public Meetings
 
-+ Bug Triage - Every Monday 1:00PM PDT\*
-+ Engineering - Every Thursday 10:00AM PDT\*
-
-\*Meeting times can vary a bit, so check on IRC first if you plan to attend.
-
-### Connection Details
-
-+ 650-903-0800 or 650-215-1282 x92 Conf# 99363 (US/INTL)
-+ 1-800-707-2533 (pin 369) Conf# 99363 (US toll free)
-+ irc.mozilla.org #pdfjs for backchannel
-
-### Meeting Notes
-
-Follow the format of:
-+ Triage - etherpad.mozilla.org/pdfjs-triage-YYYY-MM-DD
-+ Engineering - etherpad.mozilla.org/pdfjs-YYYY-MM-DD
++ https://github.com/mozilla/pdf.js/wiki/Weekly-Public-Meetings

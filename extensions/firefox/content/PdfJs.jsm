@@ -224,7 +224,7 @@ let PdfJs = {
       }
       let mimeTypes = tag.getMimeTypes();
       return mimeTypes.some(function(mimeType) {
-        return mimeType.type === PDF_CONTENT_TYPE;
+        return mimeType === PDF_CONTENT_TYPE;
       });
     });
 
@@ -254,7 +254,7 @@ let PdfJs = {
     this._pdfStreamConverterFactory.unregister();
     delete this._pdfStreamConverterFactory;
 
-    this._pdfRedirectorFactory.unregister;
+    this._pdfRedirectorFactory.unregister();
     delete this._pdfRedirectorFactory;
     Svc.pluginHost.unregisterPlayPreviewMimeType(PDF_CONTENT_TYPE);
 

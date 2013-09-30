@@ -64,6 +64,8 @@ var PDFFindController = {
 
   integratedFind: false,
 
+  firstPagePromise: new PDFJS.Promise(),
+
   initialize: function(options) {
     if(typeof PDFFindBar === 'undefined' || PDFFindBar === null) {
         throw 'PDFFindController cannot be initialized ' +
@@ -85,6 +87,12 @@ var PDFFindController = {
     for (var i = 0; i < events.length; i++) {
       window.addEventListener(events[i], this.handleEvent);
     }
+  },
+
+  reset: function pdfFindControllerReset() {
+    this.startedTextExtraction = false;
+    this.extractTextPromises = [];
+    this.active = false;
   },
 
   calcFindMatch: function(pageIndex) {
@@ -166,15 +174,17 @@ var PDFFindController = {
     this.state = e.detail;
     this.updateUIState(FindStates.FIND_PENDING);
 
-    this.extractText();
+    this.firstPagePromise.then(function() {
+      this.extractText();
 
-    clearTimeout(this.findTimeout);
-    if (e.type === 'find') {
-      // Only trigger the find action after 250ms of silence.
-      this.findTimeout = setTimeout(this.nextMatch.bind(this), 250);
-    } else {
-      this.nextMatch();
-    }
+      clearTimeout(this.findTimeout);
+      if (e.type === 'find') {
+        // Only trigger the find action after 250ms of silence.
+        this.findTimeout = setTimeout(this.nextMatch.bind(this), 250);
+      } else {
+        this.nextMatch();
+      }
+    }.bind(this));
   },
 
   updatePage: function(idx) {

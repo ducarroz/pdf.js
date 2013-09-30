@@ -23,6 +23,16 @@
        "rounds": 1,
        "type": "text"
     },
+    {  "id": "issue1293",
+       "file": "pdfs/issue1293.pdf",
+       "md5": "0a744b3bbf2fd8da0131fd3c01dd1e30",
+       "rounds": 1,
+       "link": true,
+       "firstPage": 1,
+       "lastPage": 1,
+       "type": "load",
+       "about": "PDF with undefined stream length."
+    },
     {  "id": "issue2881",
        "file": "pdfs/issue2881.pdf",
        "md5": "ea6ade27d2cb146676d23dcd6605d5ee",
@@ -439,6 +449,14 @@
        "rounds": 1,
        "type": "eq"
     },
+    {  "id": "issue3427",
+       "file": "pdfs/issue3427.pdf",
+       "md5": "61979ede77f4557c65d4eb3c1a6dceeb",
+       "link": true,
+       "lastPage": 1,
+       "rounds": 1,
+       "type": "eq"
+    },
     {  "id": "piperine",
        "file": "pdfs/piperine.pdf",
        "md5": "603ca43dc5732dbba1579f122958c0c2",
@@ -851,6 +869,13 @@
       "link": true,
       "type": "eq"
     },
+    { "id": "bug898853.pdf",
+      "file": "pdfs/bug898853.pdf",
+      "md5": "37c37702bf98d33f9f74e2380c4d1a3f",
+      "rounds": 1,
+      "type": "eq",
+      "about": "Has a multi-byte char codes."
+    },
     {  "id": "issue1912",
       "file": "pdfs/issue1912.pdf",
       "md5": "15305b7c2cba971e7423de3f6ad38fef",
@@ -878,6 +903,12 @@
       "rounds": 1,
       "link": true,
       "type": "eq"
+    },
+    {  "id": "helloworld-bad",
+      "file": "pdfs/helloworld-bad.pdf",
+      "md5": "bf5ab1cf7fe3a502c3754f55e6ceeabd",
+      "rounds": 1,
+      "type": "load"
     },
     {  "id": "issue818",
       "file": "pdfs/issue818.pdf",
@@ -935,6 +966,13 @@
       "type": "eq",
       "about": "Rotated transparency group with blend mode."
     },
+    { "id": "issue3458.pdf",
+      "file": "pdfs/issue3458.pdf",
+      "md5": "dab8bd3ad1acfc8dc82a8381a3c8ff94",
+      "rounds": 1,
+      "type": "eq",
+      "about": "Pattern with current transform different than base transform."
+    },
     {  "id": "issue2462",
       "file": "pdfs/issue2462.pdf",
       "md5": "d4e3dddfdd35464c71cf0310bff29b42",
@@ -965,6 +1003,14 @@
       "type": "eq",
       "about": "CFF CID font with font matrices in main top dict and sub top dict."
     },
+    {  "id": "issue3566",
+      "file": "pdfs/issue3566.pdf",
+      "md5": "e9ab02aa769f4c040a6fa52f00d6e3f0",
+      "rounds": 1,
+      "type": "eq",
+      "lastPage": 1,
+      "about": "CFF font with multiply-encoded glyph and no pdf encoding dict."
+    },
     {  "id": "issue1878",
       "file": "pdfs/issue1878.pdf",
       "md5": "b4fb0ce7c19368e7104dce3d0d34bcb3",
@@ -983,6 +1029,22 @@
     {  "id": "issue1936",
       "file": "pdfs/issue1936.pdf",
       "md5": "7302eb9b6a626308e2a933aaed9e1756",
+      "rounds": 1,
+      "lastPage": 1,
+      "link": true,
+      "type": "eq"
+    },
+    {  "id": "issue3062",
+      "file": "pdfs/issue3062.pdf",
+      "md5": "206715f1258f0e117df4180d98dd4d68",
+      "rounds": 1,
+      "lastPage": 1,
+      "link": true,
+      "type": "eq"
+    },
+    {  "id": "issue2442",
+      "file": "pdfs/issue2442.pdf",
+      "md5": "4656e36c44f44c71a499f02ce6c781d3",
       "rounds": 1,
       "lastPage": 1,
       "link": true,
@@ -1014,6 +1076,20 @@
       "rounds": 1,
       "link": true,
       "type": "eq"
+    },
+    {  "id": "bug888437",
+      "file": "pdfs/bug888437.pdf",
+      "md5": "93370cd589a08732a05601441c899bcb",
+      "rounds": 1,
+      "link": true,
+      "type": "eq"
+    },
+    {  "id": "issue3584",
+      "file": "pdfs/issue3584.pdf",
+      "md5": "7a00646865a840eefc76f05c588b60ce",
+      "rounds": 1,
+      "type": "eq",
+      "about": "CFF font that is drawn with clipping."
     },
     {  "id": "annotation-tx",
       "file": "pdfs/annotation-tx.pdf",
@@ -1069,6 +1145,14 @@
       "file": "pdfs/noembed-identity.pdf",
       "md5": "05d3803b6c22451e18cb60d8d8c75c0c",
       "rounds": 1,
+      "type": "eq"
+    },
+    {  "id": "bug887152",
+      "file": "pdfs/bug887152.pdf",
+      "md5": "783a3e7b1de2cf40a47ffe1f36a41d4f",
+      "rounds": 1,
+      "lastPage": 1,
+      "link": true,
       "type": "eq"
     },
     {  "id": "bug816075",
@@ -1229,6 +1313,21 @@
       "rounds": 1,
       "type": "eq"
     },
+    {  "id": "bug889327",
+      "file": "pdfs/bug889327.pdf",
+      "md5": "b45cd63419241c40731f98d0e1dac082",
+      "link": true,
+      "lastPage": 1,
+      "rounds": 1,
+      "type": "eq"
+    },
+    {  "id": "issue3521.pdf",
+       "file": "pdfs/issue3521.pdf",
+       "md5": "df95d31443e20a38efa29c3a635a045b",
+       "rounds": 1,
+       "type": "eq",
+       "about": "Support for CMap GBKp-EUC-H"
+    },
     {  "id": "issue2829",
       "file": "pdfs/issue2829.pdf",
       "md5": "f32b28cf8792f6ccc470446bfbb38584",
@@ -1256,5 +1355,14 @@
        "firstPage": 1,
        "lastPage": 1,
        "type": "eq"
+    },
+    {  "id": "issue2853",
+       "file": "pdfs/issue2853.pdf",
+       "md5": "9f0ad95ef0b243ee8813c4eca0f7a042",
+       "rounds": 1,
+       "link": true,
+       "firstPage": 1,
+       "lastPage": 1,
+       "type": "load"
     }
 ]
