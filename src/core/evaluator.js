@@ -271,10 +271,14 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var mask = dict.get('Mask') || false;
 
       var SMALL_IMAGE_DIMENSIONS = 200;
-        // JFD TODO: do we want to inline small image when we have an external objects cache
+
+      // Force tiny jpeg image to be inline
+      if ((w + h) < (SMALL_IMAGE_DIMENSIONS / 2)) {
+        inline = true;
+      }
+
       // Inlining small images into the queue as RGB data
-      if (!PDFJS.useExternalObjectsCache &&
-          inline && !softMask && !mask &&
+      if (inline && !softMask && !mask &&
           !(image instanceof JpegStream) &&
           (w + h) < SMALL_IMAGE_DIMENSIONS) {
         var imageObj = new PDFImage(this.xref, resources, image,
