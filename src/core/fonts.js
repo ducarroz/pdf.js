@@ -4141,6 +4141,8 @@ var Font = (function FontClosure() {
 
 
     convert: function Font_convert(fontName, font, properties) {
+      var self = this;
+
       function isFixedPitch(glyphs) {
         for (var i = 0, ii = glyphs.length - 1; i < ii; i++) {
           if (glyphs[i] != glyphs[i + 1])
@@ -4223,6 +4225,14 @@ var Font = (function FontClosure() {
         this.toFontChar = toFontChar;
       }
       var unitsPerEm = 1 / (properties.fontMatrix || FONT_IDENTITY_MATRIX)[0];
+      var nbrExtraNotdefGlyph = 1;
+      if (properties.subtype == 'Type1C' || properties.subtype == 'CIDFontType0C') {
+        if (properties.cidSystemInfo) {
+          nbrExtraNotdefGlyph = 0;
+        } else if (font.cff && font.cff.charset && font.cff.charset.charset && font.cff.charset.charset[0] !== ".notdef") {
+          nbrExtraNotdefGlyph = 0;
+        }
+      }
 
       var fields = {
         // PostScript Font Program
@@ -4277,28 +4287,29 @@ var Font = (function FontClosure() {
               '\x00\x00' + // -reserved-
               '\x00\x00' + // -reserved-
               '\x00\x00' + // metricDataFormat
-              string16(charstrings.length + 1)); // Number of HMetrics
+              string16(charstrings.length + nbrExtraNotdefGlyph)); // Number of HMetrics
         })(),
 
         // Horizontal metrics
         'hmtx': (function fontFieldsHmtx() {
-          var hmtx = '\x00\x00\x00\x00'; // Fake .notdef
-          var widthKeys = [];
-          if (properties.widths) {
-            for (var index in properties.widths) {
-              widthKeys.push(index);
-            }
-          }
+          //charstrings are not necessary properly sorted by gid, we need therefore build an array, sort it and then serialize it
+          var hmtx = nbrExtraNotdefGlyph ? '\x00\x00\x00\x00' : '';
+          var metrixes = [];
+
           for (var i = 0, ii = charstrings.length; i < ii; i++) {
             var charstring = charstrings[i];
             var width = 'width' in charstring ? charstring.width : 0;
             if (width === 0) {
-              if (widthKeys[i] !== undefined && properties.widths[widthKeys[i]]) {
-                width = properties.widths[widthKeys[i]];
-              }
+              width = self.glyphWidth(charstring.glyph) || 500;   // Better set a width than 0 even if this is not the right one!
+              // JFD TODO: get the leftSide Bearing from the CFF table
             }
-            hmtx += string16(width) + string16(0);
+            metrixes[charstring.gid] = {advanceWidth:width, leftSidebearing: 0};
           }
+
+          metrixes.forEach(function(metrix) {
+            hmtx += string16(metrix.advanceWidth) + string16(metrix.leftSidebearing);
+          });
+
           return stringToArray(hmtx);
         })(),
 
@@ -4306,7 +4317,7 @@ var Font = (function FontClosure() {
         'maxp': (function fontFieldsMaxp() {
           return stringToArray(
               '\x00\x00\x50\x00' + // Version number
-             string16(charstrings.length + 1)); // Num of glyphs
+              string16(charstrings.length + nbrExtraNotdefGlyph)); // Num of glyphs
         })(),
 
         // Naming tables
@@ -4592,6 +4603,32 @@ var Font = (function FontClosure() {
         disabled: disabled,
         operatorList: operatorList
       };
+    },
+
+    glyphWidth: function GlyphWidth(glyphName) {
+      var width;
+
+      // if possible, getting width by glyph name
+      if (glyphName in this.widths) {
+        width = this.widths[glyphName];
+      } else {
+        var glyphUnicode = GlyphsUnicode[glyphName];
+        // finding the charcode via unicodeToCID map
+        var charcode = 0;
+        if (this.composite)
+          charcode = this.unicodeToCID[glyphUnicode];
+        // ... via toUnicode map
+        if (!charcode && 'toUnicode' in this)
+          charcode = this.toUnicode.indexOf(glyphUnicode);
+        // setting it to unicode if negative or undefined
+        if (charcode <= 0)
+          charcode = glyphUnicode;
+        // trying to get width via charcode
+        width = this.widths[charcode];
+      }
+
+      width = width || this.defaultWidth;
+      return width;
     },
 
     charsToGlyphs: function Font_charsToGlyphs(chars) {
