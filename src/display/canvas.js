@@ -556,22 +556,24 @@ var CanvasGraphics = (function CanvasGraphicsClosure() {
 
         fnName = fnArray[i];
 
-        var log = argsArray[i].join(", ");
+        if (globalScope.pdfOpLogging) {
+          var log = argsArray[i].join(", ");
 
-        if (log == "" && argsArray[i].length > 0) {
-          log = argsArray[i];
-        }
+          if (log == "" && argsArray[i].length > 0) {
+            log = argsArray[i];
+          }
 
-        if (graphicCommands.indexOf(fnName) !== -1) {
-          graphicCommandLogCount ++;
-        } else {
-          graphicCommandLogCount = 0;
-        }
+          if (graphicCommands.indexOf(fnName) !== -1) {
+            graphicCommandLogCount ++;
+          } else {
+            graphicCommandLogCount = 0;
+          }
 
-        if (graphicCommandLogCount == 4) {
-          console.log("   ---op: [...snap...]");
-        } else if (graphicCommandLogCount < 4) {
-          console.log("   ---op:", fnName, typeof log === "string" && log.length > 64 ? log.substr(0, 61) + "..." : log);
+          if (graphicCommandLogCount == 4) {
+            console.log("   ---op: [...snap...]");
+          } else if (graphicCommandLogCount < 4) {
+            console.log("   ---op: " +  fnName + " " + (typeof log === "string" && log.length > 64 ? log.substr(0, 61) + "..." : log));
+          }
         }
 
         if (fnName !== 'dependency') {
