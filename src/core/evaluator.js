@@ -259,14 +259,13 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         var decode = dict.get('Decode', 'D');
         var inverseDecode = !!decode && decode[0] > 0;
 
-        if (PDFJS.useExternalObjectsCache) {
+        if (!inline && PDFJS.useExternalObjectsCache) {
           var uniquePrefix = this.uniquePrefix || '';
           var objId = 'img_' + uniquePrefix + (++this.idCounters.obj);
 
           operatorList.addDependency(objId);
           operatorList.addOp('paintImageMaskXObject', [objId, width, height]);
-
-          this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', reference, false], function(url) {
+          this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', reference, true], function(url) {
             if (url && url.length) {
               self.handler.send('obj', [objId, self.pageIndex, 'remoteImage', url, reference, true]);
             } else {

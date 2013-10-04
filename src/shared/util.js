@@ -1093,12 +1093,10 @@ function loadJpegStream(id, imageData, objs) {
     bytes[i] = imageData.charCodeAt(i);
   }
 
-  var blob = new Blob([bytes], { "type" : "image/jpeg" });
-  img.src = URL.createObjectURL(blob);
+  img.src = URL.createObjectURL(PDFJS.createBlob(bytes, "image/jpeg"));
 }
 
 function loadRemoteImage(id, url, objs) {
-  console.log("LOAD REMOTE IMAGE:", url);
   var img = new Image();
 
   img.onload = (function loadJpegStream_onloadClosure() {
