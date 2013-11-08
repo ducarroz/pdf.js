@@ -733,13 +733,26 @@ var WorkerTransport = (function WorkerTransportClosure() {
         }
 
         if (PDFJS.useExternalObjectsCache && PDFJS.objectsCache) {
-          PDFJS.objectsCache.setObject(data, pageProxy, function(url) {
-            if (url && url.length) {
-              data[2] = "remoteImage";
-              data[3] = url;
-            }
-            _processImage(data);
-          });
+          var object_ref = "Set_" + data[4].num + '_' + data[4].num;
+
+          PDFJS.pendingObject = PDFJS.pendingObject || {};
+          if (PDFJS.pendingObject[object_ref]) {
+            PDFJS.pendingObject[object_ref].push(data);
+          } else {
+            PDFJS.pendingObject[object_ref] = [data];
+
+            PDFJS.objectsCache.setObject(data, pageProxy, function(url) {
+                PDFJS.pendingObject[object_ref].forEach(function(data) {
+                  if (url && url.length) {
+                    data[2] = "remoteImage";
+                    data[3] = url;
+                  }
+                  _processImage(data);
+                });
+
+                delete PDFJS.pendingObject[object_ref];
+            });
+          }
         } else {
           _processImage(data);
         }

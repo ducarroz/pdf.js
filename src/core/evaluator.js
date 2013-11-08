@@ -265,32 +265,45 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
 
           operatorList.addDependency(objId);
           operatorList.addOp('paintImageMaskXObject', [objId, width, height]);
+
           this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', reference, true], function(url) {
             if (url && url.length) {
               self.handler.send('obj', [objId, self.pageIndex, 'remoteImage', url, reference, true]);
             } else {
-              //build the mask image
-              var imgArray = image.getBytes(bitStrideLength * height);
-              var imageObj = PDFImage.createMask(imgArray, width, height, inverseDecode);
+              var object_ref = "Build_" + reference.num + '_' + reference.num;
 
-              var imgData = {
-                width: width,
-                height: height,
-                data: imageObj.data
-              };
+              PDFJS.pendingObject = PDFJS.pendingObject || {};
+              if (PDFJS.pendingObject[object_ref]) {
+                  PDFJS.pendingObject[object_ref] ++;
+              } else {
+                PDFJS.pendingObject[object_ref] = 1;
 
-              // SVG mask use luminance of white instead on black like does PDF, we need to inverse the colors
-              var data = imgData.data,
-                  dataLength = data.length,
-                  i;
+                //build the mask image
+                var imgArray = image.getBytes(bitStrideLength * height);
+                var imageObj = PDFImage.createMask(imgArray, width, height, inverseDecode);
 
-              for (i = 0; i < dataLength - 4; i += 4) {
-                data[i] = 255 - data[i];
-                data[i + 1] = 255 - data[i + 1];
-                data[i + 2] = 255 - data[i + 2];
+                var imgData = {
+                  width: width,
+                  height: height,
+                  data: imageObj.data
+                };
+
+                // SVG mask use luminance of white instead on black like does PDF, we need to inverse the colors
+                var data = imgData.data,
+                    dataLength = data.length,
+                    i;
+
+                for (i = 0; i < dataLength - 4; i += 4) {
+                  data[i] = 255 - data[i];
+                  data[i + 1] = 255 - data[i + 1];
+                  data[i + 2] = 255 - data[i + 2];
+                }
+
+                while (PDFJS.pendingObject[object_ref] --) {
+                  self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, true]);
+                }
+                delete PDFJS.pendingObject[object_ref];
               }
-
-              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, true]);
             }
           });
         } else {
@@ -356,10 +369,13 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
         return;
       }
 
-      _completion = function() {
+      _completion = function(object_ref) {
           PDFImage.buildImage(function(imageObj) {
               var imgData = imageObj.getImageData();
-              self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, hasMask]);
+              do {
+                  self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, hasMask]);
+              } while (PDFJS.useExternalObjectsCache && -- PDFJS.pendingObject[object_ref]);
+              delete PDFJS.pendingObject[object_ref];
           }, self.handler, self.xref, resources, image, inline);
       };
 
@@ -368,14 +384,23 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
           if (url && url.length) {
               self.handler.send( 'obj', [objId, self.pageIndex, 'remoteImage', url, reference, hasMask]);
           } else {
-            try {
-              _completion();
-            } catch (e) {
-              if (!(e instanceof MissingDataException)) {
-                throw e;
-              }
+            var object_ref = "Build_" + reference.num + '_' + reference.num;
 
-              self.pdfManager.requestRange(e.begin, e.end).then(_completion);
+            PDFJS.pendingObject = PDFJS.pendingObject || {};
+            if (PDFJS.pendingObject[object_ref]) {
+              PDFJS.pendingObject[object_ref] ++;
+            } else {
+              PDFJS.pendingObject[object_ref] = 1;
+
+              try {
+                _completion(object_ref);
+              } catch (e) {
+                if (!(e instanceof MissingDataException)) {
+                  throw e;
+                }
+
+                self.pdfManager.requestRange(e.begin, e.end).then(function() {_completion(object_ref)});
+              }
             }
           }
         });
