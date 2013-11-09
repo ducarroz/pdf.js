@@ -375,7 +375,9 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
               do {
                   self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, hasMask]);
               } while (PDFJS.useExternalObjectsCache && -- PDFJS.pendingObject[object_ref]);
-              delete PDFJS.pendingObject[object_ref];
+              if (PDFJS.pendingObject && PDFJS.pendingObject[object_ref]) {
+                  delete PDFJS.pendingObject[object_ref];
+              }
           }, self.handler, self.xref, resources, image, inline);
       };
 
