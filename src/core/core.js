@@ -66,32 +66,42 @@ var Page = (function PageClosure() {
       return shadow(this, 'mediaBox', obj);
     },
     get view() {
-        var boxes = [this.mediaBox],
+        var boxes = [isArray(this.mediaBox) ? this.mediaBox.slice() : this.mediaBox],
             box,
             nbrBoxes,
             i;
 
         box = this.inheritPageProp('CropBox');
         if (isArray(box) && box.length === 4) {
-            boxes.push(box);
+            boxes.push(box.slice());
         }
+
+        // From the spec, 6th ed., p.963:
+        // "The crop, bleed, trim, and art boxes should not ordinarily
+        // extend beyond the boundaries of the media box. If they do, they are
+        // effectively reduced to their intersection with the media box."
 
         if (PDFJS.useTrimBox) {
-            box = this.inheritPageProp('BleedBox');
-            if (isArray(box) && box.length === 4) {
-                boxes.push(box);
-            }
             box = this.inheritPageProp('TrimBox');
             if (isArray(box) && box.length === 4) {
-                boxes.push(box);
+                boxes.push(box.slice());
             }
         }
-
         nbrBoxes = boxes.length;
         for (i = 1; i < nbrBoxes; i ++) {
-            boxes[i] = Util.intersect(boxes[i], boxes[i - 1]);
-        }
+            //offset the box to match pace or parent(previous) box
+            boxes[i][0] += boxes[i - 1][0];
+            boxes[i][1] += boxes[i - 1][1];
+            boxes[i][2] += boxes[i - 1][0];
+            boxes[i][3] += boxes[i - 1][1];
 
+            var newboxes = Util.intersect(boxes[i], boxes[i - 1]);
+            if (newboxes === false) {
+                boxes[i] = boxes[i  - 1];
+            } else {
+                boxes[i] = newboxes;
+            }
+        }
         return shadow(this, 'view', boxes[i - 1]);
     },
     get annotationRefs() {
