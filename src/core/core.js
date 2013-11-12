@@ -66,20 +66,33 @@ var Page = (function PageClosure() {
       return shadow(this, 'mediaBox', obj);
     },
     get view() {
-      var mediaBox = this.mediaBox;
-      var cropBox = this.inheritPageProp('CropBox');
-      if (!isArray(cropBox) || cropBox.length !== 4)
-        return shadow(this, 'view', mediaBox);
+        var boxes = [this.mediaBox],
+            box,
+            nbrBoxes,
+            i;
 
-      // From the spec, 6th ed., p.963:
-      // "The crop, bleed, trim, and art boxes should not ordinarily
-      // extend beyond the boundaries of the media box. If they do, they are
-      // effectively reduced to their intersection with the media box."
-      cropBox = Util.intersect(cropBox, mediaBox);
-      if (!cropBox)
-        return shadow(this, 'view', mediaBox);
+        box = this.inheritPageProp('CropBox');
+        if (isArray(box) && box.length === 4) {
+            boxes.push(box);
+        }
 
-      return shadow(this, 'view', cropBox);
+        if (PDFJS.useTrimBox) {
+            box = this.inheritPageProp('BleedBox');
+            if (isArray(box) && box.length === 4) {
+                boxes.push(box);
+            }
+            box = this.inheritPageProp('TrimBox');
+            if (isArray(box) && box.length === 4) {
+                boxes.push(box);
+            }
+        }
+
+        nbrBoxes = boxes.length;
+        for (i = 1; i < nbrBoxes; i ++) {
+            boxes[i] = Util.intersect(boxes[i], boxes[i - 1]);
+        }
+
+        return shadow(this, 'view', boxes[i - 1]);
     },
     get annotationRefs() {
       return shadow(this, 'annotationRefs', this.inheritPageProp('Annots'));

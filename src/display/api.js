@@ -838,6 +838,7 @@ var WorkerTransport = (function WorkerTransportClosure() {
         disableRange: PDFJS.disableRange,
         maxImageSize: PDFJS.maxImageSize,
         disableFontFace: PDFJS.disableFontFace,
+        useTrimBox: PDFJS.useTrimBox,
         useExternalObjectsCache: PDFJS.useExternalObjectsCache
       });
     },
