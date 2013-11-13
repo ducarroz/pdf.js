@@ -4137,7 +4137,10 @@ var Font = (function FontClosure() {
             }
           });
         } else {
-          console.warn("font remapping failed")
+          if (console.warn)
+            console.warn("font remapping failed");
+          else
+            console.log("font remapping failed");
         }
       }
     },

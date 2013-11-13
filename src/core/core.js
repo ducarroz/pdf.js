@@ -89,7 +89,7 @@ var Page = (function PageClosure() {
         }
         nbrBoxes = boxes.length;
         for (i = 1; i < nbrBoxes; i ++) {
-            //offset the box to match pace or parent(previous) box
+            //offset the box to match space of parent(previous) box
             boxes[i][0] += boxes[i - 1][0];
             boxes[i][1] += boxes[i - 1][1];
             boxes[i][2] += boxes[i - 1][0];
