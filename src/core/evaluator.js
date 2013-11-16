@@ -198,7 +198,6 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
                                                                  xobj, smask,
                                                                  operatorList) {
       var self = this;
-
       var matrix = xobj.dict.get('Matrix');
       var bbox = xobj.dict.get('BBox');
       var group = xobj.dict.get('Group');
@@ -243,6 +242,53 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       if (PDFJS.maxImageSize !== -1 && w * h > PDFJS.maxImageSize) {
         warn('Image exceeded maximum allowed size and was removed.');
         return;
+      }
+
+      // Check if we are inside a soft mask group
+      var softMaskGroup = false,
+          opIndex = operatorList.fnArray.length;
+      while (-- opIndex >= 0) {
+          if (operatorList.fnArray[opIndex] === "beginGroup") {
+              softMaskGroup = operatorList.argsArray[opIndex][0] ? operatorList.argsArray[opIndex][0].smask : false;
+              break;
+          }
+
+          if (operatorList.fnArray[opIndex] === "endGroup") {
+            break;
+          }
+      }
+
+      if (softMaskGroup) {
+          var width = dict.get('Width', 'W');
+          var height = dict.get('Height', 'H');
+          var bitStrideLength = (width + 7) >> 3;
+          var uniquePrefix = this.uniquePrefix || '';
+          var objId = 'img_' + uniquePrefix + (++ this.idCounters.obj);
+
+          operatorList.addDependency(objId);
+          operatorList.addOp('paintImageXObject', [objId, width, height]);
+
+          if (PDFJS.useExternalObjectsCache) {
+              this.handler.send( 'GetObjUrl', [objId, this.pageIndex, 'Image', reference, true], function(url) {
+                if (url && url.length) {
+                  self.handler.send('obj', [objId, self.pageIndex, 'remoteImage', url, reference, true]);
+                } else {
+                  // Build the mask image
+                  PDFImage.buildImage(function(imageObj) {
+                    var imgData = imageObj.getImageData();
+                    self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, true]);
+                  }, self.handler, self.xref, resources, image, false);
+                }
+              });
+          } else {
+              // Build the mask image
+              PDFImage.buildImage(function(imageObj) {
+                var imgData = imageObj.getImageData();
+                self.handler.send('obj', [objId, self.pageIndex, 'Image', imgData, reference, true]);
+              }, self.handler, self.xref, resources, image, false);
+          }
+
+          return;
       }
 
       var imageMask = dict.get('ImageMask', 'IM') || false;
@@ -444,7 +490,6 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
       var loadedName = font.loadedName;
       if (!font.sent) {
         var fontData = font.translated.exportData();
-
         self.handler.send('commonobj', [
           loadedName,
           'Font',
@@ -513,8 +558,16 @@ var PartialEvaluator = (function PartialEvaluatorClosure() {
             break;
           case 'SMask':
             // We support the default so don't trigger the TODO.
-            if (!isName(value) || value.name != 'None')
-              TODO('graphic state operator ' + key);
+            if (!isName(value) || value.name != 'None') {
+              if (PDFJS.enableSoftMask) {
+                  var mask = self.xref.fetchIfRef(value);
+                  if (isDict(mask)) {
+                      self.buildFormXObject(resources, mask.get('G'), true, operatorList);
+                  }
+              } else {
+                  TODO('graphic state operator ' + key);
+              }
+            }
             break;
           // Only generate info log messages for the following since
           // they are unlikey to have a big impact on the rendering.

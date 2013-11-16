@@ -227,8 +227,9 @@ var WorkerMessageHandler = PDFJS.WorkerMessageHandler = {
 
       PDFJS.maxImageSize = data.maxImageSize === undefined ?
                            -1 : data.maxImageSize;
-      PDFJS.useTrimBox = data.useTrimBox;
-      PDFJS.disableFontFace = data.disableFontFace;
+      PDFJS.useTrimBox = data.useTrimBox || false;
+      PDFJS.enableSoftMask = data.enableSoftMask || false;
+      PDFJS.disableFontFace = data.disableFontFace || false;
       PDFJS.useExternalObjectsCache = data.useExternalObjectsCache || false;
 
 
