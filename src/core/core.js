@@ -84,17 +84,20 @@ var Page = (function PageClosure() {
         if (PDFJS.useTrimBox) {
             box = this.inheritPageProp('TrimBox');
             if (isArray(box) && box.length === 4) {
-                boxes.push(box.slice());
+                nbrBoxes = boxes.length;
+
+                //offset the trim box to match space of parent(previous) box
+                box = box.slice();
+//                box[0] += boxes[nbrBoxes - 1][0];
+//                box[1] += boxes[nbrBoxes - 1][1];
+//                box[2] += boxes[nbrBoxes - 1][0];
+//                box[3] += boxes[nbrBoxes - 1][1];
+
+                boxes.push(box);
             }
         }
         nbrBoxes = boxes.length;
         for (i = 1; i < nbrBoxes; i ++) {
-            //offset the box to match space of parent(previous) box
-            boxes[i][0] += boxes[i - 1][0];
-            boxes[i][1] += boxes[i - 1][1];
-            boxes[i][2] += boxes[i - 1][0];
-            boxes[i][3] += boxes[i - 1][1];
-
             var newboxes = Util.intersect(boxes[i], boxes[i - 1]);
             if (newboxes === false) {
                 boxes[i] = boxes[i  - 1];
